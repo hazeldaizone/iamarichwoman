@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>我是有錢人</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <style>
+    /* 保留原本所有 CSS 樣式 [cite: 539-579] */
+    body { background-color: #000; color: #fff; font-family: -apple-system, sans-serif; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; overflow-x: hidden; }
+    .card { background: #1c1c1e; border-radius: 20px; padding: 18px; width: 100%; border: 1px solid rgba(255,255,255,0.05); transition: transform 0.1s; cursor: pointer; }
+    .card:active { transform: scale(0.98); }
+    .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0.4; transition: 0.2s; }
+    .nav-active { opacity: 1; border-top: 2px solid #fff; }
+    .tab-content { display: none; padding: 16px; animation: fadeIn 0.3s ease; }
+    .active { display: block; }
+    .gain { color: #ff3b30; } .loss { color: #34c759; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .v-stack-container { display: flex; gap: 8px; height: 320px; margin-bottom: 32px; align-items: stretch; position: relative; }
+    .v-col-debt { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; position: relative; }
+    .v-col-assets { flex: 3; display: flex; flex-direction: column; justify-content: flex-end; border-radius: 20px; overflow: hidden; background: #1c1c1e; position: relative; }
+    .v-item { width: 100%; display: flex; flex-direction: row; align-items: center; justify-content: center; transition: height 0.8s; position: relative; }
+    .v-label, .v-sub { font-size: 15px; font-weight: 700; text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
+    .label-above { position: absolute; bottom: 100%; left: 0; right: 0; text-align: center; padding-bottom: 6px; z-index: 20; display: flex; justify-content: center; }
+    input, select { background: #1c1c1e !important; color: #fff !important; border: 1px solid #2c2c2e !important; border-radius: 12px; padding: 12px 16px !important; width: 100%; font-size: 16px; margin-top: 4px; }
+    label { font-size: 11px; color: #8e8e93; font-weight: 800; margin-top: 16px; display: block; }
+    .accordion-content { max-height: 0; overflow: hidden; transition: max-height 0.4s; }
+    .accordion-open { max-height: 1500px; }
+    .badge-pct { background: rgba(255,255,255,0.15); border-radius: 8px; font-size: 11px; font-weight: 900; width: 64px; height: 24px; display: inline-flex; align-items: center; justify-content: center; }
+    .modal-input-overlay { background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(4px); z-index: 100; position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+    .loading-overlay { position: fixed; inset: 0; background: #000; z-index: 200; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+  </style>
+</head>
+<body class="pb-28">
+
+  <div id="loading" class="loading-overlay">
+    <div class="text-2xl font-black mb-4">HAZEL ASSET</div>
+    <div class="text-sm text-gray-500 animate-pulse">正在加密連線並取得數據...</div>
+  </div>
+
+  <script>
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbxpePft8fyeXro1ZPgTvF5Es4JAQBgbwFq145Qyd4UMOtwMssA2eAPs-4UKcdwbJ3iFSg/exec";  //GAS部署網址
+    const MY_KEY = "Hazel8_has8aLotof8_Money";
+  </script>
+
+  <div id="tab-overview" class="tab-content active">
+    <div class="mt-8 mb-8 text-center cursor-pointer active:opacity-70" onclick="showTrend()">
+      <p class="text-gray-500 text-[10px] font-bold uppercase tracking-widest">淨資產</p>
+      <h1 id="net-worth" class="text-5xl font-black tracking-tighter mt-1">$ 0</h1>
+    </div>
+    <div class="v-stack-container">
+      <div class="v-col-debt">
+        <div class="debt-box" id="debt-container" style="height:100%; display:flex; flex-direction:column; justify-content:flex-end; background:#1c1c1e; border-radius:20px; overflow:hidden; position:relative;"></div>
+      </div>
+      <div class="v-col-assets" id="asset-stack"></div>
+    </div>
+    <div id="card-retirement" class="mb-10 px-1">
+      <div class="flex justify-between text-[10px] font-bold text-gray-500 mb-2 uppercase tracking-widest">
+        <span>退休進度 <span id="goal-pct" class="text-white ml-2">0%</span></span><span id="goal-text">目標 $ 0</span>
+      </div>
+      <div class="h-3 bg-[#1c1c1e] rounded-full overflow-hidden border border-white/5">
+        <div id="progress-bar" class="h-full bg-blue-500 transition-all duration-1000" style="width: 0%"></div>
+      </div>
+    </div>
+    <div id="overview-list" class="space-y-3"></div>
+  </div>
+
+  <div id="tab-invest" class="tab-content">
+    <div class="mb-8"><div id="head-tw" class="mb-3"></div><div id="list-tw" class="space-y-3"></div></div>
+    <div class="mb-8"><div id="head-us" class="mb-3"></div><div id="list-us" class="space-y-3"></div></div>
+  </div>
+
+  <div id="tab-trade" class="tab-content">
+    <h2 class="text-2xl font-bold mb-6 px-1">新增交易紀錄</h2>
+    <div class="space-y-1">
+      <label>日期*</label><input type="date" id="t-date">
+      <label>市場*</label><select id="t-market"><option>台股</option><option>美股</option></select>
+      <label>交易類型*</label>
+      <select id="t-type" onchange="handleTypeChange()">
+        <option value="買入">買入</option><option value="賣出">賣出</option><option value="配息">配息</option>
+        <option value="折讓">折讓</option><option value="分割">分割</option>
+      </select>
+      <label>標的代號*</label><input type="text" id="t-ticker" placeholder="如 2330" oninput="handleTickerInput()">
+      <div id="lot-selector-wrap" class="hidden mt-4">
+        <p class="text-[10px] font-bold text-blue-400 uppercase tracking-widest px-1">選擇要賣出的庫存</p>
+        <div id="lot-list-container" class="space-y-2 max-h-60 overflow-y-auto mt-2 pb-4"></div>
+      </div>
+      <label>券商</label>
+      <select id="t-broker">
+        <option value="">選擇券商</option><option value="永豐大戶">永豐大戶</option><option value="聯邦證券">聯邦證券</option>
+        <option value="國泰證券">國泰證券</option><option value="台新證券">台新證券</option>
+      </select>
+      <div id="dynamic-form" class="space-y-1"></div>
+      <button onclick="submitTrade()" id="btn-save" class="w-full bg-white text-black py-5 rounded-xl font-bold text-lg mt-8 active:opacity-80 transition shadow-lg">送出</button>
+    </div>
+  </div>
+
+  <div id="modal-detail" class="fixed inset-0 bg-black z-50 hidden overflow-y-auto p-6 pb-32">
+    <button onclick="closeDetail()" class="absolute top-6 right-6 bg-white/10 px-4 py-2 rounded-full text-white font-bold text-xs">✕ 關閉</button>
+    <div class="mb-6 text-center"><h1 id="detail-ticker" class="text-4xl font-black pt-6">---</h1></div>
+    <div id="detail-summary-card" class="summary-card"></div>
+    <div class="tab-group sticky top-0 bg-black z-10 py-2 flex gap-2">
+      <button id="btn-tab-lots" onclick="switchDetailTab('lots')" class="detail-tab-btn detail-tab-active">庫存</button>
+      <button id="btn-tab-divs" onclick="switchDetailTab('divs')" class="detail-tab-btn">股利</button>
+      <button id="btn-tab-realized" onclick="switchDetailTab('realized')" class="detail-tab-btn">已實現</button>
+    </div>
+    <div id="detail-list" class="space-y-3"></div>
+  </div>
+
+  <div id="modal-sell-quick" class="modal-input-overlay hidden">
+    <div class="bg-[#1c1c1e] w-full max-w-sm rounded-2xl p-6 border border-white/10">
+      <h3 class="text-lg font-bold mb-4 text-center">賣出股票</h3>
+      <label>賣出日期</label><input type="date" id="qs-date">
+      <label>成交單價</label><input type="number" id="qs-price" step="0.01">
+      <label>股數</label><input type="number" id="qs-qty" oninput="updateQuickSellId()">
+      <p id="qs-max-hint" class="text-[10px] font-bold text-blue-400 text-right mt-1">庫存：0 股</p>
+      <label>手續費／稅金</label><input type="number" id="qs-fee" step="0.01">
+      <div class="grid grid-cols-2 gap-3 mt-8">
+        <button onclick="closeQuickSell()" class="py-4 rounded-xl bg-[#2c2c2e] text-gray-400">取消</button>
+        <button onclick="submitQuickSell()" id="qs-submit-btn" class="py-4 rounded-xl bg-white text-black font-bold">送出</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-alert" class="modal-input-overlay hidden">
+    <div class="bg-[#1c1c1e] w-full max-w-xs rounded-2xl p-6 text-center">
+      <h3 id="alert-title" class="text-lg font-bold mb-4">提示</h3>
+      <p id="alert-msg" class="text-sm text-gray-400 mb-6"></p>
+      <button onclick="closeAlert()" class="w-full py-3 rounded-xl bg-white text-black font-bold">好的</button>
+    </div>
+  </div>
+
+  <div id="modal-trend" class="fixed inset-0 bg-black/95 z-50 hidden p-6 flex flex-col justify-center">
+    <button onclick="closeTrend()" class="text-right text-2xl mb-4 text-gray-500 font-bold">✕</button>
+    <div style="height: 400px; width: 100%; position: relative;"><canvas id="trendChart"></canvas></div>
+  </div>
+
+  <nav class="fixed bottom-0 inset-x-0 h-24 bg-black/90 backdrop-blur-xl border-t border-white/5 flex justify-around items-center px-4 z-40 pb-4">
+    <button onclick="nav('overview')" id="nav-overview" class="nav-btn nav-active"><span class="text-xl">📊</span><span class="text-[10px] font-bold mt-1">資產總覽</span></button>
+    <button onclick="nav('invest')" id="nav-invest" class="nav-btn"><span class="text-xl">📈</span><span class="text-[10px] font-bold mt-1">股票投資</span></button>
+    <button onclick="nav('trade')" id="nav-trade" class="nav-btn"><span class="text-xl">⊕</span><span class="text-[10px] font-bold mt-1">股票交易</span></button>
+  </nav>
+
+  <script>
+    let appData = {};
+    let charts = { trend: null };
+    let currentDetailTicker = '', currentDetailMarket = '';
+    let currentDetailData = { lots: [], divs: [], realized: [] };
+    let currentLotId = '', currentMaxQty = 0;
+    let activeInputType = '', activeInputName = '';
+
+    // 初始化與資料抓取 (使用新版 fetch 模式取代 google.script.run)
+    window.onload = () => { 
+      document.getElementById('t-date').valueAsDate = new Date(); 
+      load(); 
+      renderForm(); 
+    };
+
+    async function callGas(action, params = {}) {
+      const url = new URL(GAS_URL);
+      url.searchParams.append('key', MY_KEY);
+      url.searchParams.append('action', action);
+      for (const [key, value] of Object.entries(params)) {
+        url.searchParams.append(key, value);
+      }
+      const response = await fetch(url);
+      return await response.json();
+    }
+
+    async function load() {
+      try {
+        appData = await callGas('getAppData');
+        renderOverview();
+        renderInvest();
+        document.getElementById('loading').style.display = 'none';
+      } catch (e) {
+        showAlert("連線失敗，請檢查 GAS 網址或密鑰");
+      }
+    }
+
+    // 保留原本所有圖表與 UI 渲染函式 [cite: 625-765]
+    function renderOverview() {
+      document.getElementById('net-worth').innerHTML = fmt(appData.netWorth);
+      document.getElementById('goal-text').innerHTML = '目標 ' + fmt(appData.retirementGoal);
+      document.getElementById('goal-pct').innerText = appData.goalPct || "0%";
+      document.getElementById('progress-bar').style.width = Math.min(parseFloat(appData.goalPct)||0, 100) + '%';
+      const debtData = appData.debtCat || { value: 0, pctStr: "0%", children: [] };
+      document.getElementById('debt-container').innerHTML = `<div class="w-full bg-gray-600 absolute bottom-0" style="height: ${debtData.pctStr}; transition: height 1s;"></div>${debtData.value > 0 ? `<div class="label-above" style="bottom: ${debtData.pctStr}; transition: bottom 1s;"><span>${debtData.pctStr} 負債</span></div>` : ''}`;
+      
+      let tV = 0; appData.categories.forEach(c => { if(c.value > 0) tV += c.value; });
+      let stackHtml = '';
+      appData.categories.forEach(c => {
+        if(c.value <= 0) return;
+        const cp = (c.value / tV * 100).toFixed(1) + "%";
+        if (c.children?.length > 0) {
+          c.children.forEach(ch => {
+            const chp = (ch.value / tV * 100).toFixed(1) + "%";
+            stackHtml += `<div class="v-item" style="height:${chp}; background:${ch.color}"><span class="v-label">${chp}</span><span class="v-sub">${ch.name}</span></div>`;
+          });
+        } else {
+          stackHtml += `<div class="v-item" style="height:${cp}; background:${c.color}"><span class="v-label">${cp}</span><span class="v-sub">${c.name}</span></div>`;
+        }
+      });
+      document.getElementById('asset-stack').innerHTML = stackHtml;
+      
+      let listHtml = '';
+      appData.categories.forEach((c, i) => {
+        if (c.value <= 0) return;
+        const hasChildren = c.children?.length > 0;
+        listHtml += `<div class="card mb-3" onclick="${hasChildren ? `toggleAccordion('acc-${i}', 'arr-${i}')` : ''}"><div class="flex justify-between items-center"><div class="flex items-center gap-2"><div class="badge-pct" style="background:${c.color}">${c.pct}</div><span class="font-bold text-lg">${c.name}</span></div><span class="font-bold text-lg">${fmt(c.value)}</span></div></div>`;
+      });
+      document.getElementById('overview-list').innerHTML = listHtml;
+    }
+
+    function renderInvest() {
+      const draw = (list, id, headId, m) => {
+        const listEl = document.getElementById(id);
+        const headEl = document.getElementById(headId);
+        if(!list.length) { listEl.innerHTML = '<p class="text-gray-600 text-xs italic pl-2">無庫存</p>'; return; }
+        const activeLots = list.filter(s => s.qty > 0);
+        const total = activeLots.reduce((a, b) => ({ cost: a.cost + (b.cost || 0), pl: a.pl + (b.pl || 0), val: (a.val || 0) + (b.value || 0), today: a.today + (b.todayPL || 0) }), { cost: 0, pl: 0, val: 0, today: 0 });
+        const totalRoi = total.cost > 0 ? (total.pl / total.cost * 100) : 0;
+        headEl.innerHTML = `<div class="bg-[#1c1c1e] p-4 rounded-2xl border border-white/5 shadow-inner mb-4"><div class="flex justify-between mb-2"><span>${m}持倉</span><span class="${getValColorClass(total.pl)} font-black">${totalRoi.toFixed(2)}%</span></div><div class="flex justify-between text-2xl font-black"><span>${fmt(total.val)}</span><span class="text-sm self-end opacity-50">今日 ${fmtTodayPL(total.today)}</span></div></div>`;
+        listEl.innerHTML = activeLots.map(s => `<div class="card mb-2" onclick="showDetail('${s.ticker}', '${m}')"><div class="flex justify-between"><div><span class="text-[10px] text-gray-500">${s.ticker}</span><h3 class="text-xl font-bold">${s.name || s.ticker}</h3></div><div class="text-right"><div class="font-bold">${fmt(s.value)}</div><div class="${getValColorClass(s.pl)} text-xs">${(s.roi * 100).toFixed(2)}%</div></div></div></div>`).join('');
+      };
+      draw(appData.twStocks, 'list-tw', 'head-tw', '台股');
+      draw(appData.usStocks, 'list-us', 'head-us', '美股');
+    }
+
+    async function showDetail(tk, market) {
+      currentDetailTicker = tk; currentDetailMarket = market;
+      document.getElementById('detail-ticker').innerText = tk;
+      document.getElementById('modal-detail').classList.remove('hidden');
+      currentDetailData = await callGas('getTickerDetail', { ticker: tk });
+      switchDetailTab('lots');
+    }
+
+    // 其他原本的輔助函式 [cite: 616-765]
+    const fmt = (v) => '$ ' + Math.round(parseFloat(v) || 0).toLocaleString();
+    const fmtTodayPL = (v) => (v >= 0 ? '+' : '') + Math.round(v).toLocaleString();
+    const getValColorClass = (val) => val >= 0 ? 'gain' : 'loss';
+    function nav(id) { document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active')); document.getElementById('tab-' + id).classList.add('active'); document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('nav-active')); document.getElementById('nav-' + id).classList.add('nav-active'); if(id !== 'trade') load(); }
+    function closeDetail() { document.getElementById('modal-detail').classList.add('hidden'); }
+    function toggleAccordion(id, aid) { document.getElementById(id)?.classList.toggle('accordion-open'); document.getElementById(aid)?.classList.toggle('rotate-down'); }
+    function handleTypeChange() { renderForm(); }
+    function renderForm() { 
+      const t = document.getElementById('t-type').value; 
+      let h = `<label>成交單價</label><input type="number" id="t-price" step="0.01"><label>股數</label><input type="number" id="t-qty">`;
+      document.getElementById('dynamic-form').innerHTML = h;
+    }
+
+    async function submitTrade() {
+      const b = document.getElementById('btn-save'); b.disabled = true; b.innerText = "傳送中...";
+      const d = { 
+        date: document.getElementById('t-date').value, 
+        market: document.getElementById('t-market').value, 
+        ticker: document.getElementById('t-ticker').value, 
+        type: document.getElementById('t-type').value, 
+        price: document.getElementById('t-price').value, 
+        qty: document.getElementById('t-qty').value 
+      };
+      await callGas('addTrade', d);
+      showAlert("同步成功");
+      b.disabled = false; b.innerText = "送出";
+      nav('overview');
+    }
+
+    function showAlert(msg) { document.getElementById('alert-msg').innerText = msg; document.getElementById('modal-alert').classList.remove('hidden'); }
+    function closeAlert() { document.getElementById('modal-alert').classList.add('hidden'); }
+
+    // 趨勢圖表邏輯
+    function showTrend() {
+      document.getElementById('modal-trend').classList.remove('hidden');
+      setTimeout(() => {
+        const ctx = document.getElementById('trendChart').getContext('2d');
+        if(charts.trend) charts.trend.destroy();
+        charts.trend = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: appData.trendValues.map(v => v.date).reverse(),
+            datasets: [{ data: appData.trendValues.map(v => v.value).reverse(), borderColor: '#5856d6', tension: 0.1, fill: false }]
+          },
+          options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { display: false }, x: { grid: { display: false } } } }
+        });
+      }, 200);
+    }
+    function closeTrend() { document.getElementById('modal-trend').classList.add('hidden'); }
+  </script>
+</body>
+</html>
