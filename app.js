@@ -23,3 +23,7 @@ const runtimeSource = await Promise.all(
 new Function("localDb", "recalculateDataset", `${runtimeSource.join("")}
 //# sourceURL=asset-pwa-runtime.js
 `)(localDb, recalculateDataset);
+
+if (document.readyState !== "loading") {
+  document.dispatchEvent(new Event("DOMContentLoaded"));
+}
