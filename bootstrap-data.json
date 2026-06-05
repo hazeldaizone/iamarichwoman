@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "source": "empty-public-pwa",
+  "exportedAt": "2026-06-05T15:47:46.974Z",
+  "data": {
+    "trend": [],
+    "overview": [],
+    "stocks": [],
+    "transactions": [],
+    "retirement": [],
+    "dailyAssetSnapshots": [],
+    "dailyHoldings": [],
+    "dailyPrices": []
+  }
+}
