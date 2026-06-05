@@ -1,96 +1,252 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-  <meta charset="UTF-8">
-  <link rel="apple-touch-icon" href="https://i.meee.com.tw/aE4Z130.png?v=4">
-  <link rel="apple-touch-icon-precomposed" href="https://i.meee.com.tw/aE4Z130.png?v=4">
-  <link rel="icon" type="image/png" href="https://i.meee.com.tw/aE4Z130.png?v=4">
-  <link rel="shortcut icon" href="https://i.meee.com.tw/aE4Z130.png?v=4">
-  <meta name="apple-mobile-web-app-title" content="我的私房錢">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-touch-fullscreen" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>我的私房錢</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#111113">
+    <title>資產總覽 PWA</title>
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" href="./icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <section class="auth-screen hidden" id="auth-screen" aria-label="登入">
+      <form class="auth-card" id="auth-form">
+        <p class="eyebrow">資產總覽</p>
+        <h1>輸入 PIN</h1>
+        <p>需要驗證後才會從試算表讀取資料。</p>
+        <label>
+          PIN
+          <input id="auth-pin" type="password" inputmode="numeric" autocomplete="current-password">
+        </label>
+        <button class="primary-button" type="submit">進入 PWA</button>
+        <div class="trade-result hidden" id="auth-result"></div>
+      </form>
+    </section>
 
-  <script>
-    /** 🚀 填入資訊 */
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbxpePft8fyeXro1ZPgTvF5Es4JAQBgbwFq145Qyd4UMOtwMssA2eAPs-4UKcdwbJ3iFSg/exec"; 
-    const MY_KEY = "Hazel8_has8aLotof8_Money"; 
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">資產總覽</p>
+          <h1 id="page-title">總覽</h1>
+        </div>
+        <button class="ghost-button" id="refresh-button" type="button">更新</button>
+      </header>
+      <div class="app-status hidden" id="app-status"></div>
 
-    /** 🛠️ 模擬 Google 環境 (讓原本功能不失效) */
-    window.google = {
-      script: {
-        run: {
-          withSuccessHandler: function(callback) {
-            return {
-              getAppData: async function() {
-                const res = await fetch(`${GAS_URL}?key=${MY_KEY}&action=getAppData`);
-                const data = await res.json();
-                callback(data);
-                document.getElementById('loading-screen').style.display = 'none';
-              },
-              getTickerDetail: async function(tk) {
-                const res = await fetch(`${GAS_URL}?key=${MY_KEY}&action=getTickerDetail&ticker=${tk}`);
-                const data = await res.json();
-                callback(data);
-              },
-              addTrade: async function(d) {
-                const params = new URLSearchParams(d).toString();
-                const res = await fetch(`${GAS_URL}?key=${MY_KEY}&action=addTrade&${params}`);
-                callback(await res.json());
-              }
-            };
-          }
-        }
-      }
-    };
-  </script>
+      <main>
+        <section class="screen active" id="screen-overview" aria-label="總覽">
+          <section class="hero-panel">
+            <div class="hero-meta">
+              <span>淨資產</span>
+              <span id="latest-date">--</span>
+            </div>
+            <strong id="net-worth">$ --</strong>
+            <div class="hero-change" id="net-change">今日 --</div>
+          </section>
 
-  <style>
-    /* 此處省略 100% 原始 CSS，請保持原本 html.txt 裡的 style 內容 */
-    body { background-color: #000; color: #fff; font-family: -apple-system, sans-serif; user-select: none; -webkit-user-select: none; overflow-x: hidden; }
-    .card { background: #1c1c1e; border-radius: 20px; padding: 18px; border: 1px solid rgba(255,255,255,0.05); }
-    .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; opacity: 0.4; }
-    .nav-active { opacity: 1; border-top: 2px solid #fff; }
-    .tab-content { display: none; padding: 16px; }
-    .active { display: block; }
-    .v-stack-container { display: flex; gap: 8px; height: 320px; margin-bottom: 32px; }
-    .loading-screen { position: fixed; inset: 0; background: #000; z-index: 1000; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-    /* ... 更多原始 CSS ... */
-  </style>
-</head>
-<body class="pb-28">
+          <section class="retirement-panel" id="retirement-panel"></section>
 
-  <div id="loading-screen" class="loading-screen">
-    <div class="text-3xl font-black mb-4">HAZEL ASSET</div>
-    <div class="animate-pulse text-gray-500">正在連接數據庫...</div>
-  </div>
+          <section class="section-block">
+            <div class="section-head">
+              <h2>資產配置</h2>
+              <span id="allocation-total">--</span>
+            </div>
+            <div class="allocation-bar" id="allocation-bar"></div>
+            <div class="category-groups" id="category-list"></div>
+          </section>
 
-  <!-- 原本的 HTML 結構 (Tab, Overview, List 等) 全部放在這裡 -->
-  <div id="tab-overview" class="tab-content active">
-    <!-- 原本的淨資產、圖表等 HTML -->
-    <div class="mt-8 mb-8 text-center" onclick="showTrend()">
-      <p class="text-gray-500 text-[10px] font-bold">淨資產</p>
-      <h1 id="net-worth" class="text-5xl font-black">$ 0</h1>
+          <section class="section-block">
+            <div class="section-head">
+              <h2>本月損益</h2>
+              <button class="link-button" data-nav="calendar" type="button">看月曆</button>
+            </div>
+            <div class="month-summary" id="overview-month-summary"></div>
+          </section>
+
+          <section class="section-block">
+            <div class="section-head">
+              <h2>本地資料</h2>
+              <span id="local-db-source">IndexedDB</span>
+            </div>
+            <div class="local-actions">
+              <button class="secondary-button" id="backup-password-button" type="button">設定備份密碼</button>
+              <button class="secondary-button" id="backup-now-button" type="button">立即加密備份</button>
+              <button class="secondary-button" id="backup-download-button" type="button">匯出最新備份</button>
+              <button class="secondary-button" id="local-snapshot-button" type="button">建立本地快照</button>
+              <label class="secondary-button file-button">
+                匯入加密備份
+                <input id="backup-restore-input" type="file" accept=".assetbackup,application/json">
+              </label>
+              <button class="secondary-button" id="bootstrap-import-button" type="button">重新匯入 Sheet 匯出檔</button>
+            </div>
+            <div class="trade-result hidden" id="local-db-status"></div>
+          </section>
+        </section>
+
+        <section class="screen" id="screen-trends" aria-label="趨勢">
+          <div class="segmented" role="tablist" aria-label="趨勢視圖">
+            <button class="segment active" data-trend-view="line" type="button">走勢</button>
+            <button class="segment" data-trend-view="calendar" type="button">損益月曆</button>
+            <button class="segment" data-trend-view="analysis" type="button">分析</button>
+          </div>
+
+          <section class="trend-view active" id="trend-line">
+            <div class="section-block">
+              <div class="section-head">
+                <h2 id="trend-chart-title">淨資產走勢</h2>
+                <span id="trend-chart-range">最近 30 筆</span>
+              </div>
+              <div class="trend-controls">
+                <div class="chip-row" role="tablist" aria-label="走勢期間">
+                  <button class="chip active" data-trend-range="30" type="button">30天</button>
+                  <button class="chip" data-trend-range="90" type="button">90天</button>
+                  <button class="chip" data-trend-range="180" type="button">半年</button>
+                  <button class="chip" data-trend-range="all" type="button">全部</button>
+                </div>
+                <div class="chip-row" role="tablist" aria-label="走勢項目">
+                  <button class="chip active" data-trend-series="netWorth" type="button">淨資產</button>
+                  <button class="chip" data-trend-series="tw" type="button">台股</button>
+                  <button class="chip" data-trend-series="us" type="button">美股</button>
+                  <button class="chip" data-trend-series="cash" type="button">流動資金</button>
+                </div>
+              </div>
+              <div class="chart-card">
+                <svg id="net-chart" viewBox="0 0 360 180" role="img" aria-label="淨資產走勢圖"></svg>
+              </div>
+            </div>
+            <div class="metric-grid" id="trend-metrics"></div>
+          </section>
+
+          <section class="trend-view" id="trend-calendar">
+            <div class="calendar-toolbar">
+              <button class="icon-button" id="prev-month" type="button" aria-label="上個月">‹</button>
+              <strong id="calendar-title">--</strong>
+              <button class="icon-button" id="next-month" type="button" aria-label="下個月">›</button>
+            </div>
+            <div class="calendar-mode">
+              <button class="chip active" data-calendar-mode="total" type="button">總損益</button>
+              <button class="chip" data-calendar-mode="tw" type="button">台股</button>
+              <button class="chip" data-calendar-mode="us" type="button">美股</button>
+            </div>
+            <div class="month-summary" id="calendar-summary"></div>
+            <div class="calendar-grid" id="calendar-grid"></div>
+          </section>
+
+          <section class="trend-view" id="trend-analysis">
+            <div class="analysis-list" id="analysis-list"></div>
+          </section>
+        </section>
+
+        <section class="screen" id="screen-holdings" aria-label="投資">
+          <div class="segmented market-tabs" role="tablist" aria-label="市場">
+            <button class="segment active" data-market="台股" type="button">台股</button>
+            <button class="segment" data-market="美股" type="button">美股</button>
+          </div>
+          <section class="holding-summary" id="holding-summary"></section>
+          <section class="holding-list" id="holding-list"></section>
+        </section>
+
+        <section class="screen" id="screen-trade" aria-label="交易">
+          <section class="section-block">
+            <div class="section-head">
+              <h2>新增交易</h2>
+              <span>本地草稿</span>
+            </div>
+            <form class="trade-form" id="trade-form">
+              <label>
+                日期
+                <input id="trade-date" type="date">
+              </label>
+              <label>
+                交易類型
+                <select id="trade-type">
+                  <option>買入</option>
+                  <option>賣出</option>
+                  <option>配息</option>
+                  <option>分割</option>
+                </select>
+              </label>
+              <label>
+                市場
+                <select id="trade-market">
+                  <option>台股</option>
+                  <option>美股</option>
+                </select>
+              </label>
+              <label>
+                股票代號
+                <input id="trade-ticker" inputmode="latin" placeholder="0050 / VOO">
+              </label>
+              <div id="trade-dynamic-fields"></div>
+              <div class="lot-selector hidden" id="trade-lot-selector"></div>
+              <button class="secondary-button hidden" id="trade-cancel" type="button">取消賣出</button>
+              <button class="primary-button" id="trade-submit" type="submit">送出交易</button>
+              <div class="trade-result hidden" id="trade-result"></div>
+            </form>
+          </section>
+        </section>
+      </main>
+
+      <nav class="bottom-nav" aria-label="主要導覽">
+        <button class="nav-item active" data-screen="overview" type="button">
+          <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 13.5 12 5l8 8.5"/><path d="M6.5 11.5V20h11v-8.5"/><path d="M10 20v-5h4v5"/></svg></span>
+          總覽
+        </button>
+        <button class="nav-item" data-screen="trends" type="button">
+          <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 18h16"/><path d="m5 15 4-5 4 3 6-8"/><path d="M5 15h3.2"/><path d="M13 13h3.2"/></svg></span>
+          趨勢
+        </button>
+        <button class="nav-item" data-screen="holdings" type="button">
+          <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 18V7"/><path d="M9 18V4"/><path d="M14 18v-8"/><path d="M19 18v-5"/><path d="M3 18h18"/></svg></span>
+          股票
+        </button>
+        <button class="nav-item" data-screen="trade" type="button">
+          <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span>
+          交易
+        </button>
+      </nav>
     </div>
-    <div id="overview-list" class="space-y-3"></div>
-  </div>
-  
-  <!-- 底部導覽列 -->
-  <nav class="fixed bottom-0 inset-x-0 h-24 bg-black/90 border-t border-white/5 flex justify-around items-center z-40">
-    <button onclick="nav('overview')" id="nav-overview" class="nav-btn nav-active">📊</button>
-    <button onclick="nav('invest')" id="nav-invest" class="nav-btn">📈</button>
-    <button onclick="nav('trade')" id="nav-trade" class="nav-btn">⊕</button>
-  </nav>
 
-  <script>
-    /* 這裡請完整貼入原本 html.txt 裡面 script 標籤內的所有 function 邏輯 */
-    /* 包括 renderOverview, renderInvest, showDetail 等 */
-    window.onload = () => { load(); };
-    function load() { google.script.run.withSuccessHandler(d => { /* 渲染數據 */ }).getAppData(); }
-  </script>
-</body>
+    <dialog id="day-dialog" class="day-dialog">
+      <form method="dialog">
+        <button class="dialog-close" aria-label="關閉">×</button>
+      </form>
+      <div id="day-detail"></div>
+    </dialog>
+
+    <dialog id="holding-dialog" class="detail-dialog">
+      <form method="dialog">
+        <button class="dialog-close" aria-label="關閉">×</button>
+      </form>
+      <div id="holding-detail"></div>
+    </dialog>
+
+    <dialog id="asset-edit-dialog" class="edit-dialog">
+      <form method="dialog">
+        <button class="dialog-close" aria-label="關閉">×</button>
+      </form>
+      <form class="edit-form" id="asset-edit-form">
+        <h2 id="asset-edit-title">修改金額</h2>
+        <label id="asset-edit-name-wrap">
+          項目名稱
+          <input id="asset-edit-name" type="text">
+        </label>
+        <label>
+          金額
+          <input id="asset-edit-amount" type="number" inputmode="numeric" step="1">
+        </label>
+        <label id="asset-edit-color-wrap">
+          代表色
+          <input id="asset-edit-color" type="color">
+        </label>
+        <div class="trade-result hidden" id="asset-edit-result"></div>
+        <button class="danger-button hidden" id="asset-delete-button" type="button">刪除項目</button>
+        <button class="primary-button" type="submit">儲存</button>
+      </form>
+    </dialog>
+
+    <script src="./config.js"></script>
+    <script src="./app.js" type="module"></script>
+  </body>
 </html>
