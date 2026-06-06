@@ -25,11 +25,17 @@ export function recalculateDataset(dataset, options = {}) {
   const data = dataset?.data || {};
   const now = options.now || new Date();
   const liveFx = findLiveFx(data.transactions || [], data.stocks || []) || DEFAULT_FX;
-  const priceByKey = buildPriceMap(data.stocks || [], liveFx);
+  const priceByKey = buildPriceMap(data.stocks || [], data.dailyPrices || [], liveFx);
   const transactions = recalculateTransactions(data.transactions || [], priceByKey, liveFx);
   const stocks = buildStockSummary(transactions, data.stocks || [], liveFx);
   const overview = rebuildOverview(data.overview || [], stocks);
   const trend = options.snapshot ? upsertTodaySnapshot(data.trend || [], overview, transactions, now) : (data.trend || []);
+  const historical = options.historical
+    ? rebuildHistoricalTables(transactions, data.dailyPrices || [], data.dailyAssetSnapshots || [], overview, now)
+    : {
+      dailyHoldings: data.dailyHoldings || [],
+      dailyAssetSnapshots: data.dailyAssetSnapshots || [],
+    };
   return {
     ...dataset,
     exportedAt: new Date().toISOString(),
@@ -39,6 +45,8 @@ export function recalculateDataset(dataset, options = {}) {
       stocks,
       overview,
       trend,
+      dailyHoldings: historical.dailyHoldings,
+      dailyAssetSnapshots: historical.dailyAssetSnapshots,
     },
   };
 }
@@ -470,6 +478,232 @@ function readOverviewValues(rows) {
   return { netWorth, tw, us, cash };
 }
 
+function rebuildHistoricalTables(transactions, dailyPrices, existingSnapshots, overview, now) {
+  const chronological = [...transactions].sort(compareHistoricalChronological);
+  const start = chronological.map((row) => parseDate(row["日期"])).filter(Boolean).sort((a, b) => a - b)[0];
+  if (!start) {
+    return { dailyHoldings: [], dailyAssetSnapshots: existingSnapshots || [] };
+  }
+
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const txByDate = groupRowsByDate(chronological);
+  const priceMap = buildDailyPriceMap(dailyPrices);
+  const cashByDate = buildCashSourceMap(existingSnapshots);
+  const overviewCash = readOverviewValues(overview).cash;
+  const endKey = dateKey(end);
+  if (!cashByDate.has(endKey) && overviewCash > 0) cashByDate.set(endKey, overviewCash);
+
+  const lots = [];
+  const holdingRows = [];
+  const snapshotRows = [];
+  let prevTw = null;
+  let prevUs = null;
+  let prevInvestment = null;
+  let prevCash = null;
+  let firstInvestment = null;
+
+  for (const day of dateRange(start, end)) {
+    const key = dateKey(day);
+    const dayTransactions = txByDate.get(key) || [];
+    dayTransactions.forEach((row) => applyHistoricalTransaction(row, lots));
+
+    const dailyHoldings = historicalHoldingsSnapshot(key, lots);
+    holdingRows.push(...dailyHoldings);
+
+    let twValue = 0;
+    let usValue = 0;
+    dailyHoldings.forEach((holding) => {
+      const price = priceMap.get(historicalKey(key, holding["市場"], holding["股票代號"]));
+      if (!price || !(price.closeTwd > 0)) return;
+      const value = Math.floor(number(holding["持股股數"]) * price.closeTwd);
+      if (holding["市場"] === "台股") twValue += value;
+      if (holding["市場"] === "美股") usValue += value;
+    });
+
+    const flows = investmentFlowsForRows(dayTransactions);
+    const investmentValue = twValue + usValue;
+    let cash = cashByDate.has(key) ? cashByDate.get(key) : null;
+    if (cash === null && prevCash !== null) {
+      cash = prevCash - flows.tw.buy - flows.us.buy + flows.tw.sell + flows.us.sell + flows.tw.income + flows.us.income;
+    }
+    const netWorth = cash === null ? "" : cash + investmentValue;
+    const twPnl = prevTw === null ? "" : twValue - prevTw - flows.tw.buy + flows.tw.sell + flows.tw.income;
+    const usPnl = prevUs === null ? "" : usValue - prevUs - flows.us.buy + flows.us.sell + flows.us.income;
+    const stockPnl = twPnl === "" || usPnl === "" ? "" : twPnl + usPnl;
+    if (firstInvestment === null && investmentValue > 0) firstInvestment = investmentValue;
+
+    snapshotRows.push({
+      "日期": key,
+      "流動資金": cash === null ? "" : round0(cash),
+      "台股市值": round0(twValue),
+      "美股市值": round0(usValue),
+      "投資總市值": round0(investmentValue),
+      "淨資產": cash === null ? "" : round0(netWorth),
+      "台股占比": netWorth ? safeRatio(twValue, netWorth) : safeRatio(twValue, investmentValue),
+      "美股占比": netWorth ? safeRatio(usValue, netWorth) : safeRatio(usValue, investmentValue),
+      "流動資金占比": netWorth ? safeRatio(cash, netWorth) : "",
+      "每日損益": stockPnl,
+      "每日報酬率": prevInvestment && stockPnl !== "" ? safeRatio(stockPnl, prevInvestment) : "",
+      "台股每日損益": twPnl,
+      "台股每日報酬率": prevTw ? safeRatio(twPnl, prevTw) : "",
+      "美股每日損益": usPnl,
+      "美股每日報酬率": prevUs ? safeRatio(usPnl, prevUs) : "",
+      "累積報酬率": firstInvestment ? investmentValue / firstInvestment - 1 : "",
+    });
+
+    if (cash !== null) prevCash = cash;
+    prevTw = twValue;
+    prevUs = usValue;
+    prevInvestment = investmentValue;
+  }
+
+  return {
+    dailyHoldings: holdingRows,
+    dailyAssetSnapshots: snapshotRows,
+  };
+}
+
+function groupRowsByDate(rows) {
+  const map = new Map();
+  rows.forEach((row) => {
+    const key = dateKey(parseDate(row["日期"]));
+    if (!key) return;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(row);
+  });
+  return map;
+}
+
+function buildDailyPriceMap(rows) {
+  const map = new Map();
+  rows.forEach((row) => {
+    const day = text(row["日期"] || row.date).slice(0, 10);
+    const market = text(row["市場"] || row.market);
+    const ticker = normalizeTicker(text(row["股票代號"] ?? row.ticker));
+    if (!day || !market || !ticker) return;
+    map.set(historicalKey(day, market, ticker), {
+      closeTwd: number(row["台幣收盤價"] ?? row.closeTwd),
+      close: number(row["收盤價"] ?? row.close),
+    });
+  });
+  return map;
+}
+
+function buildCashSourceMap(rows) {
+  const map = new Map();
+  rows.forEach((row) => {
+    const key = dateKey(parseDate(row["日期"] || row.date));
+    const value = number(row["流動資金"] ?? row.cash);
+    if (key && value) map.set(key, value);
+  });
+  return map;
+}
+
+function applyHistoricalTransaction(row, lots) {
+  const type = text(row["交易類型"]);
+  if (type === "買入" || type === "結轉") {
+    const shares = number(row["股數"]);
+    if (!(shares > 0)) return;
+    const market = text(row["市場"]);
+    const ticker = normalizeTicker(text(row["標的"]));
+    if (type === "結轉") {
+      for (let i = lots.length - 1; i >= 0; i--) {
+        if (lots[i].market === market && lots[i].ticker === ticker) lots.splice(i, 1);
+      }
+    }
+    const net = number(row["淨收支"]);
+    const cost = Math.abs(number(row["剩餘成本"]) || net || historicalTransactionCashFlow(row));
+    lots.push({
+      id: text(row["買入編號"]) || `LOCAL-${dateKey(parseDate(row["日期"]))}-${text(row["標的"])}`,
+      market,
+      ticker,
+      shares,
+      cost,
+      currency: "TWD",
+    });
+    return;
+  }
+
+  if (type === "賣出") {
+    let remaining = number(row["股數"]);
+    const sellItems = parseSellSpec(row["賣出編號"]);
+    const candidates = lots.filter((lot) => {
+      if (lot.market !== text(row["市場"]) || lot.ticker !== normalizeTicker(text(row["標的"])) || lot.shares <= 0) return false;
+      return !sellItems.length || sellItems.some((item) => item.id === lot.id);
+    });
+    candidates.forEach((lot) => {
+      if (remaining <= 1e-9) return;
+      const matched = sellItems.find((item) => item.id === lot.id);
+      const requested = matched?.qty ?? remaining;
+      const used = Math.min(lot.shares, requested, remaining);
+      const ratio = lot.shares ? used / lot.shares : 0;
+      lot.shares -= used;
+      lot.cost *= 1 - ratio;
+      remaining -= used;
+    });
+    for (let i = lots.length - 1; i >= 0; i--) {
+      if (lots[i].shares <= 1e-9) lots.splice(i, 1);
+    }
+    return;
+  }
+
+  if (type === "分割") {
+    const ratio = number(row["分割比例"]);
+    if (!(ratio > 0)) return;
+    const market = text(row["市場"]);
+    const ticker = normalizeTicker(text(row["標的"]));
+    lots.forEach((lot) => {
+      if (lot.market === market && lot.ticker === ticker) lot.shares *= ratio;
+    });
+  }
+}
+
+function historicalHoldingsSnapshot(key, lots) {
+  const grouped = new Map();
+  lots.forEach((lot) => {
+    if (!(lot.shares > 1e-9)) return;
+    const groupKey = `${lot.market}|${lot.ticker}|${lot.currency}`;
+    const group = grouped.get(groupKey) || {
+      "日期": key,
+      "市場": lot.market,
+      "股票代號": lot.ticker,
+      "持股股數": 0,
+      "平均成本": 0,
+      "成本總額": 0,
+      "幣別": lot.currency,
+    };
+    group["持股股數"] += lot.shares;
+    group["成本總額"] += lot.cost;
+    grouped.set(groupKey, group);
+  });
+  return [...grouped.values()].map((row) => ({
+    ...row,
+    "持股股數": roundQty(row["持股股數"]),
+    "成本總額": round0(row["成本總額"]),
+    "平均成本": row["持股股數"] ? row["成本總額"] / row["持股股數"] : 0,
+  })).sort((a, b) => `${a["市場"]}${a["股票代號"]}`.localeCompare(`${b["市場"]}${b["股票代號"]}`));
+}
+
+function investmentFlowsForRows(rows) {
+  const flow = emptyInvestmentFlow();
+  rows.forEach((row) => {
+    const market = text(row["市場"]) === "美股" ? "us" : text(row["市場"]) === "台股" ? "tw" : "";
+    const type = text(row["交易類型"]);
+    if (!market) return;
+    const amount = Math.abs(historicalTransactionCashFlow(row));
+    if (type === "買入") flow[market].buy += amount;
+    if (type === "賣出") flow[market].sell += amount;
+    if (["配息", "股利"].includes(type)) flow[market].income += amount;
+  });
+  return flow;
+}
+
+function historicalTransactionCashFlow(row) {
+  const net = number(row["淨收支"]);
+  if (net) return net;
+  return investmentFlowAmount(row) * (text(row["交易類型"]) === "買入" ? -1 : 1);
+}
+
 function buildInvestmentFlowsByDate(rows = []) {
   const map = new Map();
   rows.forEach((row) => {
@@ -596,11 +830,31 @@ function parseSellSpec(value) {
     });
 }
 
-function buildPriceMap(stocks, liveFx) {
-  return new Map(stocks.map((stock) => [
+function buildPriceMap(stocks, dailyPrices, liveFx) {
+  const map = new Map(stocks.map((stock) => [
     stockKey(stock["市場"], stock["標的"]),
     { price: number(stock["股票現價"]), fx: text(stock["市場"]) === "美股" ? liveFx : 1 },
   ]));
+  const latestByInstrument = new Map();
+  dailyPrices.forEach((row) => {
+    const day = text(row["日期"] || row.date).slice(0, 10);
+    const market = text(row["市場"] || row.market);
+    const ticker = normalizeTicker(text(row["股票代號"] ?? row.ticker));
+    if (!day || !market || !ticker) return;
+    const key = stockKey(market, ticker);
+    const previous = latestByInstrument.get(key);
+    if (!previous || day > previous.day) {
+      latestByInstrument.set(key, {
+        day,
+        price: number(row["收盤價"] ?? row.close),
+        fx: market === "美股" ? number(row["匯率"] ?? row.fx) || liveFx : 1,
+      });
+    }
+  });
+  latestByInstrument.forEach((priceInfo, key) => {
+    if (priceInfo.price > 0) map.set(key, { price: priceInfo.price, fx: priceInfo.fx || liveFx || 1 });
+  });
+  return map;
 }
 
 function findLiveFx(transactions, stocks) {
@@ -626,6 +880,17 @@ function compareChronological(a, b) {
   return (parseDate(a["時間戳記"])?.getTime() || 0) - (parseDate(b["時間戳記"])?.getTime() || 0);
 }
 
+function compareHistoricalChronological(a, b) {
+  const ad = parseDate(a["日期"])?.getTime() || Number.POSITIVE_INFINITY;
+  const bd = parseDate(b["日期"])?.getTime() || Number.POSITIVE_INFINITY;
+  if (ad !== bd) return ad - bd;
+  const rank = { "買入": 10, "賣出": 20, "配息": 30, "分割": 40, "結轉": 50 };
+  const ar = rank[text(a["交易類型"])] || 99;
+  const br = rank[text(b["交易類型"])] || 99;
+  if (ar !== br) return ar - br;
+  return (parseDate(a["時間戳記"])?.getTime() || 0) - (parseDate(b["時間戳記"])?.getTime() || 0);
+}
+
 function compareDisplay(a, b) {
   const ad = parseDate(a["日期"])?.getTime() || 0;
   const bd = parseDate(b["日期"])?.getTime() || 0;
@@ -648,12 +913,28 @@ function dateKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
+function dateRange(start, end) {
+  const rows = [];
+  const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  while (cursor <= last) {
+    rows.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return rows;
+}
+
 function stockKey(market, ticker) {
   return `${text(market)}::${normalizeTicker(text(ticker))}`;
 }
 
+function historicalKey(date, market, ticker) {
+  return `${text(date)}|${text(market)}|${normalizeTicker(text(ticker))}`;
+}
+
 function normalizeTicker(value) {
-  return text(value).replace(/^'/, "");
+  const ticker = text(value).replace(/^'/, "");
+  return TICKER_DISPLAY[ticker] || ticker;
 }
 
 function normalizeTickerKey(value) {

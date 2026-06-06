@@ -12,6 +12,7 @@ import {
   setMeta,
 } from "./local-db.js";
 import { recalculateDataset } from "./local-calculator.js";
+import { syncPublicMarketPrices } from "./price-sync.js";
 
 const DATA_PATHS = {
   trend: "../data/asset_trend.csv",
@@ -96,6 +97,9 @@ async function loadData() {
   await loadIndexedDbData();
   hideAppError();
   renderAll();
+  await syncAndRecalculateMarketData({ reason: "auto" }).catch((err) => {
+    updateLocalDbStatus(`公開股價同步失敗：${err.message || err}`, "loss");
+  });
   await runAutoBackup().catch((err) => updateLocalDbStatus(`自動備份略過：${err.message || err}`, "neutral"));
 }
 
@@ -1889,7 +1893,7 @@ function collectTradePayload(type, market, ticker, date) {
 }
 
 function bindRefresh() {
-  document.getElementById("refresh-button").addEventListener("click", () => loadData().catch(showAppError));
+  document.getElementById("refresh-button").addEventListener("click", () => refreshLocalMarketData().catch(showAppError));
 }
 
 function bindLocalDataControls() {
@@ -1963,6 +1967,7 @@ async function handleBackupRestore(event) {
     applyDataset(dataset);
     renderAll();
     updateLocalDbStatus("已從加密備份還原到本地資料庫。", "profit");
+    await syncAndRecalculateMarketData({ reason: "restore" });
   } catch (err) {
     updateLocalDbStatus(`還原失敗：${err.message || err}`, "loss");
   }
@@ -1988,7 +1993,7 @@ async function handleSheetImport(event) {
     applyDataset(dataset);
     renderAll();
     updateLocalDbStatus(`已匯入 ${file.name}，資料已寫入本機 IndexedDB。`, "profit");
-    window.setTimeout(() => window.location.reload(), 500);
+    await syncAndRecalculateMarketData({ reason: "import" });
   } catch (err) {
     updateLocalDbStatus(`匯入失敗：${err.message || err}`, "loss");
   }
@@ -2008,12 +2013,44 @@ async function handleLocalSnapshot() {
       dailyPrices: dataset.data?.dailyPrices || [],
       dailyAssetSnapshots: dataset.data?.dailyAssetSnapshots || [],
     };
-    state.dataset = await saveLocalDataset(recalculateDataset(dataset, { snapshot: true }));
+    state.dataset = await saveLocalDataset(recalculateDataset(dataset, { snapshot: true, historical: true }));
     applyDataset(state.dataset);
     renderAll();
     updateLocalDbStatus("已依目前資產總覽建立本地快照。", "profit");
   } catch (err) {
     updateLocalDbStatus(`建立快照失敗：${err.message || err}`, "loss");
+  }
+}
+
+async function refreshLocalMarketData() {
+  await loadIndexedDbData();
+  renderAll();
+  await syncAndRecalculateMarketData({ reason: "manual" });
+}
+
+async function syncAndRecalculateMarketData({ reason = "auto" } = {}) {
+  if (!state.dataset) return;
+  const shouldShow = reason !== "auto";
+  if (shouldShow) updateLocalDbStatus("正在同步公開股價並重算本地資料...", "neutral");
+
+  const syncResult = await syncPublicMarketPrices(state.dataset, { now: new Date() });
+  const recalculated = recalculateDataset(syncResult.dataset, {
+    historical: true,
+    snapshot: true,
+    now: new Date(),
+  });
+  state.dataset = await saveLocalDataset(recalculated);
+  applyDataset(state.dataset);
+  renderAll();
+
+  if (syncResult.errors.length) {
+    updateLocalDbStatus(`部分公開股價同步失敗：${syncResult.errors.slice(0, 2).join("；")}`, "loss");
+    return;
+  }
+  if (syncResult.changed) {
+    updateLocalDbStatus(`已同步 ${syncResult.fetched} 筆公開股價，並重算 DailyPrices / DailyHoldings / DailyAssetSnapshot。`, "profit");
+  } else if (shouldShow) {
+    updateLocalDbStatus("公開股價已是最新，已重算本地快照。", "profit");
   }
 }
 

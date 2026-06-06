@@ -1,4 +1,4 @@
-const CACHE_NAME = "asset-pwa-v22";
+const CACHE_NAME = "asset-pwa-v23";
 const CORE_ASSETS = [
   "./",
   "./index.html",
@@ -7,6 +7,7 @@ const CORE_ASSETS = [
   "./app.js",
   "./local-db.js",
   "./local-calculator.js",
+  "./price-sync.js",
   "./bootstrap-data.json",
   "./manifest.webmanifest",
   "./icon.svg",
