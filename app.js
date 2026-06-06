@@ -57,6 +57,9 @@ function installLocalActionIcons() {
   for (const [id, svg] of Object.entries(icons)) {
     const button = document.getElementById(id);
     if (!button || button.querySelector(".action-icon")) continue;
+    if (id === "bootstrap-import-button") {
+      button.replaceChildren(document.createTextNode("匯入Sheet檔"));
+    }
     const icon = document.createElement("span");
     icon.className = "action-icon";
     icon.setAttribute("aria-hidden", "true");
@@ -77,6 +80,7 @@ function installLocalActionIcons() {
 
 function installEmergencyInteractions() {
   const pageTitles = { overview: "總覽", trends: "趨勢", holdings: "股票", trade: "交易" };
+  const sheetImportInput = ensureSheetImportInput();
   const status = (message, tone = "neutral") => {
     const el = document.getElementById("local-db-status");
     if (!el) return;
@@ -173,15 +177,40 @@ function installEmergencyInteractions() {
   const importButton = document.getElementById("bootstrap-import-button");
   if (importButton && !importButton.dataset.loaderBound) {
     importButton.dataset.loaderBound = "1";
-    importButton.addEventListener("click", async () => {
+    importButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      sheetImportInput?.click();
+    }, true);
+  }
+
+  if (sheetImportInput && !sheetImportInput.dataset.loaderBound) {
+    sheetImportInput.dataset.loaderBound = "1";
+    sheetImportInput.addEventListener("change", async (event) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (!file) return;
       try {
-        await localDb.reloadFromBootstrap();
-        status("已重新匯入目前的 Sheet 匯出檔，重新整理後會顯示最新結果。", "profit");
+        await localDb.importDatasetFile(file);
+        status(`已匯入 ${file.name}，資料已寫入本機 IndexedDB。`, "profit");
       } catch (err) {
         status(`匯入失敗：${err.message || err}`, "loss");
       }
     });
   }
+}
+
+function ensureSheetImportInput() {
+  let input = document.getElementById("sheet-import-input");
+  if (input) return input;
+  input = document.createElement("input");
+  input.id = "sheet-import-input";
+  input.type = "file";
+  input.accept = ".json,application/json";
+  input.className = "hidden-file-input";
+  input.style.display = "none";
+  document.body.appendChild(input);
+  return input;
 }
 
 function escapeHtml(value) {
