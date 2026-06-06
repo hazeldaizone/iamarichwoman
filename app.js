@@ -2207,19 +2207,20 @@ function rowsInMonth(date) {
 }
 
 function calendarRowsInMonth(date) {
+  const inTargetMonth = (row) => row.date.getFullYear() === date.getFullYear() && row.date.getMonth() === date.getMonth();
   if (state.calendarMode !== "cash") {
-    const rows = buildCalendarRowsFromHoldingsAndPrices()
-      .filter((row) => row.date.getFullYear() === date.getFullYear() && row.date.getMonth() === date.getMonth())
+    const rows = mergeCurrentStockPnlRow(buildCalendarRowsFromHoldingsAndPrices())
+      .filter(inTargetMonth)
       .filter((row) => hasCalendarMovement(row));
     if (rows.length) return rows;
   }
-  return buildCalendarRows()
-    .filter((row) => row.date.getFullYear() === date.getFullYear() && row.date.getMonth() === date.getMonth())
+  return mergeCurrentStockPnlRow(buildCalendarRows())
+    .filter(inTargetMonth)
     .filter((row) => hasCalendarMovement(row));
 }
 
 function buildCalendarRows() {
-  if (state.dailyAssetSnapshots.length) return state.dailyAssetSnapshots.filter((row) => !isWeekend(row.date)).sort((a, b) => a.date - b.date);
+  if (state.dailyAssetSnapshots.length) return mergeCurrentStockPnlRow(state.dailyAssetSnapshots.filter((row) => !isWeekend(row.date))).sort((a, b) => a.date - b.date);
 
   const merged = new Map();
   state.trend.forEach((row) => {
@@ -2241,7 +2242,86 @@ function buildCalendarRows() {
     const existing = merged.get(key);
     if (!existing || snapshotPriority(current) >= snapshotPriority(existing)) merged.set(key, current);
   });
+  return mergeCurrentStockPnlRow([...merged.values()]).sort((a, b) => a.date - b.date);
+}
+
+function mergeCurrentStockPnlRow(rows) {
+  const current = buildCurrentStockPnlRow();
+  if (!current) return rows;
+  const merged = new Map(rows.map((row) => [dateKey(row.date), row]));
+  const existing = merged.get(dateKey(current.date));
+  merged.set(dateKey(current.date), {
+    ...existing,
+    ...current,
+    cashPnl: existing?.cashPnl ?? current.cashPnl,
+    cashRate: existing?.cashRate ?? current.cashRate,
+  });
   return [...merged.values()].sort((a, b) => a.date - b.date);
+}
+
+function buildCurrentStockPnlRow() {
+  if (!state.stocks.length) return null;
+  const date = currentStockPnlDate();
+  if (!date || isWeekend(date)) return null;
+  const overview = currentOverviewValues();
+  const twStocks = state.stocks.filter((stock) => stock.market === "台股");
+  const usStocks = state.stocks.filter((stock) => stock.market === "美股");
+  const tw = twStocks.reduce((sum, stock) => sum + stock.value, 0) || overview.tw;
+  const us = usStocks.reduce((sum, stock) => sum + stock.value, 0) || overview.us;
+  const twPnl = twStocks.reduce((sum, stock) => sum + stock.todayPnl, 0);
+  const usPnl = usStocks.reduce((sum, stock) => sum + stock.todayPnl, 0);
+  if (!tw && !us && !twPnl && !usPnl) return null;
+  const totalPnl = twPnl + usPnl;
+  const cash = overview.cash;
+  const netWorth = overview.netWorth || tw + us + cash;
+  return {
+    date,
+    netWorth,
+    tw,
+    us,
+    cash,
+    twPnl,
+    usPnl,
+    totalPnl,
+    twRate: safeRate(twPnl, tw - twPnl),
+    usRate: safeRate(usPnl, us - usPnl),
+    totalRate: safeRate(totalPnl, tw + us - totalPnl),
+    cashPnl: 0,
+    cashRate: 0,
+    twOpen: twStocks.length > 0,
+    usOpen: usStocks.length > 0,
+    source: "股票總表今日損益",
+  };
+}
+
+function currentStockPnlDate() {
+  const exported = parseDate(state.dataset?.exportedAt);
+  if (exported) return isWeekend(exported) ? previousWeekday(exported) : exported;
+  const maxTx = state.transactions.reduce((pick, tx) => {
+    const date = parseDate(tx.date);
+    if (!date) return pick;
+    return !pick || date > pick ? date : pick;
+  }, null);
+  return maxTx && isWeekend(maxTx) ? previousWeekday(maxTx) : maxTx;
+}
+
+function currentOverviewValues() {
+  let currentCat = "";
+  let netWorth = 0;
+  let tw = 0;
+  let us = 0;
+  let cash = 0;
+  state.overview.forEach((row) => {
+    const cat = String(row["大類別"] || "").trim();
+    const sub = String(row["子項目"] || "").trim();
+    const value = toNumber(row["金額 (TWD)"]);
+    if (cat) currentCat = cat;
+    if (cat === "總計") netWorth = value;
+    if (sub === "台股") tw = value;
+    if (sub === "美股") us = value;
+    if (currentCat.includes("流動資金") && sub) cash += value;
+  });
+  return { netWorth, tw, us, cash };
 }
 
 function hasCalendarMovement(row) {
