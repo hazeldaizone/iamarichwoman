@@ -4,6 +4,17 @@ const DATASET_KEY = "dataset";
 const META_STORE = "meta";
 const BACKUP_STORE = "backups";
 const BOOTSTRAP_PATH = "./bootstrap-data.json";
+const XLSX_CDN = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+const SHEET_NAMES = {
+  trend: "資產趨勢",
+  overview: "資產總覽",
+  stocks: "股票總表",
+  transactions: "交易明細",
+  retirement: "退休規劃",
+  dailyAssetSnapshots: "DailyAssetSnapshot",
+  dailyHoldings: "DailyHoldings",
+  dailyPrices: "DailyPrices",
+};
 const BACKUP_VERSION = 1;
 const EMPTY_DATASET = Object.freeze({
   schemaVersion: 1,
@@ -148,7 +159,7 @@ async function readDatasetFile(file) {
   const name = String(file?.name || "");
   const lowerName = name.toLowerCase();
   if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
-    throw new Error("目前 PWA 不能直接解析 .xlsx，請先匯入由資產總覽.xlsx 轉出的 bootstrap-data.json。");
+    return readXlsxDatasetFile(file);
   }
 
   const parsed = JSON.parse(await file.text());
@@ -174,6 +185,72 @@ async function readDatasetFile(file) {
       dailyPrices: parsed.data.dailyPrices || [],
     },
   };
+}
+
+async function readXlsxDatasetFile(file) {
+  const XLSX = await loadXlsxLibrary();
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+  const sheetRows = (sheetName) => {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) return [];
+    return XLSX.utils.sheet_to_json(sheet, {
+      defval: "",
+      raw: false,
+      dateNF: "yyyy-mm-dd",
+    }).map(cleanImportedRow);
+  };
+
+  const sheets = Object.fromEntries(
+    Object.values(SHEET_NAMES).map((sheetName) => [sheetName, sheetRows(sheetName)]),
+  );
+
+  return {
+    schemaVersion: 1,
+    source: file.name || "imported-xlsx",
+    exportedAt: new Date().toISOString(),
+    sheets,
+    data: {
+      trend: sheets[SHEET_NAMES.trend] || [],
+      overview: sheets[SHEET_NAMES.overview] || [],
+      stocks: sheets[SHEET_NAMES.stocks] || [],
+      transactions: sheets[SHEET_NAMES.transactions] || [],
+      retirement: sheets[SHEET_NAMES.retirement] || [],
+      dailyAssetSnapshots: sheets[SHEET_NAMES.dailyAssetSnapshots] || [],
+      dailyHoldings: sheets[SHEET_NAMES.dailyHoldings] || [],
+      dailyPrices: sheets[SHEET_NAMES.dailyPrices] || [],
+    },
+  };
+}
+
+function cleanImportedRow(row) {
+  const clean = {};
+  Object.entries(row || {}).forEach(([key, value]) => {
+    const header = String(key || "").trim();
+    if (!header || header.startsWith("__EMPTY")) return;
+    clean[header] = value;
+  });
+  return clean;
+}
+
+async function loadXlsxLibrary() {
+  if (window.XLSX) return window.XLSX;
+  await new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${XLSX_CDN}"]`);
+    if (existing) {
+      existing.addEventListener("load", resolve, { once: true });
+      existing.addEventListener("error", reject, { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = XLSX_CDN;
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error("Excel 解析模組載入失敗，請確認網路連線後再試。"));
+    document.head.appendChild(script);
+  });
+  if (!window.XLSX) throw new Error("Excel 解析模組載入失敗。");
+  return window.XLSX;
 }
 
 function emptyDataset() {
