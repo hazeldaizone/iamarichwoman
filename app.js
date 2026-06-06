@@ -21,6 +21,7 @@ const runtimeSource = await Promise.all(
 );
 
 installLocalActionIcons();
+installEmergencyInteractions();
 
 new Function("localDb", "recalculateDataset", `${runtimeSource.join("")}
 //# sourceURL=asset-pwa-runtime.js
@@ -72,4 +73,122 @@ function installLocalActionIcons() {
     icon.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 21V10"/><path d="m8 14 4-4 4 4"/><path d="M5 5h14"/></svg>';
     restoreButton.prepend(icon);
   }
+}
+
+function installEmergencyInteractions() {
+  const pageTitles = { overview: "總覽", trends: "趨勢", holdings: "股票", trade: "交易" };
+  const status = (message, tone = "neutral") => {
+    const el = document.getElementById("local-db-status");
+    if (!el) return;
+    el.classList.remove("hidden");
+    el.innerHTML = `<strong class="${tone}">${escapeHtml(message)}</strong>`;
+  };
+
+  document.querySelectorAll("[data-screen], [data-nav]").forEach((button) => {
+    if (button.dataset.loaderBound) return;
+    button.dataset.loaderBound = "1";
+    button.addEventListener("click", () => {
+      const screen = button.dataset.screen || (button.dataset.nav === "calendar" ? "trends" : button.dataset.nav);
+      document.querySelectorAll(".screen").forEach((el) => el.classList.toggle("active", el.id === `screen-${screen}`));
+      document.querySelectorAll(".nav-item").forEach((el) => el.classList.toggle("active", el.dataset.screen === screen));
+      const title = document.getElementById("page-title");
+      if (title) title.textContent = pageTitles[screen] || "總覽";
+      if (button.dataset.nav === "calendar") {
+        document.querySelectorAll("[data-trend-view]").forEach((el) => el.classList.toggle("active", el.dataset.trendView === "calendar"));
+        document.querySelectorAll(".trend-view").forEach((el) => el.classList.toggle("active", el.id === "trend-calendar"));
+      }
+    });
+  });
+
+  const passwordButton = document.getElementById("backup-password-button");
+  if (passwordButton && !passwordButton.dataset.loaderBound) {
+    passwordButton.dataset.loaderBound = "1";
+    passwordButton.addEventListener("click", async () => {
+      const first = window.prompt("設定加密備份密碼。這個密碼不會存進備份檔，請自行記住。");
+      if (!first) return;
+      const second = window.prompt("再輸入一次備份密碼。");
+      if (first !== second) return status("兩次密碼不同，尚未設定。", "loss");
+      sessionStorage.setItem("assetBackupPassword", first);
+      localStorage.setItem("assetBackupPasswordConfigured", "1");
+      await localDb.setMeta("backupPasswordConfiguredAt", new Date().toISOString());
+      status("備份密碼已設定於本次開啟期間。", "profit");
+    });
+  }
+
+  const getPassword = () => {
+    const saved = sessionStorage.getItem("assetBackupPassword");
+    if (saved) return saved;
+    const password = window.prompt("請輸入加密備份密碼。");
+    if (!password) {
+      status("未輸入備份密碼，無法執行。", "loss");
+      return "";
+    }
+    sessionStorage.setItem("assetBackupPassword", password);
+    return password;
+  };
+
+  const backupButton = document.getElementById("backup-now-button");
+  if (backupButton && !backupButton.dataset.loaderBound) {
+    backupButton.dataset.loaderBound = "1";
+    backupButton.addEventListener("click", async () => {
+      try {
+        const password = getPassword();
+        if (!password) return;
+        const backup = await localDb.exportEncryptedBackup(password);
+        window.__latestAssetBackup = backup;
+        await localDb.setMeta("lastBackupDay", new Date().toISOString().slice(0, 10));
+        status("已建立加密備份。", "profit");
+      } catch (err) {
+        status(`備份失敗：${err.message || err}`, "loss");
+      }
+    });
+  }
+
+  const downloadButton = document.getElementById("backup-download-button");
+  if (downloadButton && !downloadButton.dataset.loaderBound) {
+    downloadButton.dataset.loaderBound = "1";
+    downloadButton.addEventListener("click", async () => {
+      const backups = await localDb.getBackupRecords();
+      const backup = window.__latestAssetBackup || backups.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+      if (!backup) return status("目前沒有可匯出的備份，請先建立加密備份。", "loss");
+      localDb.downloadBackup(backup);
+      status("已下載加密備份檔。", "profit");
+    });
+  }
+
+  const snapshotButton = document.getElementById("local-snapshot-button");
+  if (snapshotButton && !snapshotButton.dataset.loaderBound) {
+    snapshotButton.dataset.loaderBound = "1";
+    snapshotButton.addEventListener("click", async () => {
+      try {
+        const dataset = await localDb.loadLocalDataset();
+        await localDb.saveLocalDataset(recalculateDataset(dataset, { snapshot: true }));
+        status("已建立本地快照，重新整理後會顯示最新結果。", "profit");
+      } catch (err) {
+        status(`建立快照失敗：${err.message || err}`, "loss");
+      }
+    });
+  }
+
+  const importButton = document.getElementById("bootstrap-import-button");
+  if (importButton && !importButton.dataset.loaderBound) {
+    importButton.dataset.loaderBound = "1";
+    importButton.addEventListener("click", async () => {
+      try {
+        await localDb.reloadFromBootstrap();
+        status("已重新匯入目前的 Sheet 匯出檔，重新整理後會顯示最新結果。", "profit");
+      } catch (err) {
+        status(`匯入失敗：${err.message || err}`, "loss");
+      }
+    });
+  }
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
