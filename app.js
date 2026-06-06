@@ -2013,7 +2013,7 @@ async function handleLocalSnapshot() {
       dailyPrices: dataset.data?.dailyPrices || [],
       dailyAssetSnapshots: dataset.data?.dailyAssetSnapshots || [],
     };
-    state.dataset = await saveLocalDataset(recalculateDataset(dataset, { snapshot: true, historical: true }));
+    state.dataset = await saveLocalDataset(recalculateDataset(dataset, { snapshot: true }));
     applyDataset(state.dataset);
     renderAll();
     updateLocalDbStatus("已依目前資產總覽建立本地快照。", "profit");
@@ -2034,6 +2034,11 @@ async function syncAndRecalculateMarketData({ reason = "auto" } = {}) {
   if (shouldShow) updateLocalDbStatus("正在同步公開股價並重算本地資料...", "neutral");
 
   const syncResult = await syncPublicMarketPrices(state.dataset, { now: new Date() });
+  if (syncResult.errors.length) {
+    updateLocalDbStatus(`公開股價同步失敗，未改動本地資料：${syncResult.errors.slice(0, 2).join("；")}`, "loss");
+    return;
+  }
+
   const recalculated = recalculateDataset(syncResult.dataset, {
     historical: true,
     snapshot: true,
@@ -2043,10 +2048,6 @@ async function syncAndRecalculateMarketData({ reason = "auto" } = {}) {
   applyDataset(state.dataset);
   renderAll();
 
-  if (syncResult.errors.length) {
-    updateLocalDbStatus(`部分公開股價同步失敗：${syncResult.errors.slice(0, 2).join("；")}`, "loss");
-    return;
-  }
   if (syncResult.changed) {
     updateLocalDbStatus(`已同步 ${syncResult.fetched} 筆公開股價，並重算 DailyPrices / DailyHoldings / DailyAssetSnapshot。`, "profit");
   } else if (shouldShow) {

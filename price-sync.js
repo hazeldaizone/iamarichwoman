@@ -170,6 +170,9 @@ async function fetchFxSeries(start, end, fallbackFx) {
 }
 
 async function fetchYahooHistory(symbol, start, end) {
+  const proxyRows = await fetchPriceProxyHistory(symbol, start, end);
+  if (proxyRows.length) return proxyRows;
+
   const period1 = Math.floor(start.getTime() / 1000);
   const period2 = Math.floor(addDays(end, 2).getTime() / 1000);
   const url = `${YAHOO_CHART_URL}${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d&events=history&includeAdjustedClose=true`;
@@ -182,6 +185,57 @@ async function fetchYahooHistory(symbol, start, end) {
     .map((ts, index) => ({ date: new Date(ts * 1000), close: Number(closes[index]) }))
     .filter((row) => row.close > 0)
     .map((row) => ({ date: startOfDay(row.date), close: row.close }));
+}
+
+async function fetchPriceProxyHistory(symbol, start, end) {
+  const proxyUrl = text(globalThis.ASSET_PWA_CONFIG?.priceProxyUrl);
+  if (!proxyUrl) return [];
+  const url = new URL(proxyUrl);
+  url.searchParams.set("action", "history");
+  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("start", dateKey(start));
+  url.searchParams.set("end", dateKey(end));
+  let payload;
+  try {
+    const response = await fetch(url.toString(), { cache: "no-cache" });
+    if (!response.ok) throw new Error(`Price proxy HTTP ${response.status}`);
+    payload = await response.json();
+  } catch {
+    payload = await fetchJsonp(url);
+  }
+  if (payload?.error || payload?.ok === false) throw new Error(payload.error || "Price proxy failed");
+  const rows = payload?.rows || payload?.data?.rows || [];
+  return rows
+    .map((row) => ({ date: parseDate(row.date || row["日期"]), close: number(row.close || row["收盤價"]) }))
+    .filter((row) => row.date && row.close > 0)
+    .map((row) => ({ date: startOfDay(row.date), close: row.close }));
+}
+
+function fetchJsonp(url) {
+  return new Promise((resolve, reject) => {
+    const callback = `assetPriceProxy_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+    const script = document.createElement("script");
+    const timer = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("Price proxy JSONP timeout"));
+    }, 20000);
+    function cleanup() {
+      window.clearTimeout(timer);
+      delete window[callback];
+      script.remove();
+    }
+    window[callback] = (payload) => {
+      cleanup();
+      resolve(payload);
+    };
+    url.searchParams.set("callback", callback);
+    script.src = url.toString();
+    script.onerror = () => {
+      cleanup();
+      reject(new Error("Price proxy JSONP failed"));
+    };
+    document.head.appendChild(script);
+  });
 }
 
 async function fetchYahooJson(url) {
