@@ -104,6 +104,48 @@ function installEmergencyInteractions() {
     });
   });
 
+  document.querySelectorAll("[data-trend-view]").forEach((button) => {
+    if (button.dataset.loaderBound) return;
+    button.dataset.loaderBound = "1";
+    button.addEventListener("click", () => {
+      const view = button.dataset.trendView;
+      document.querySelectorAll("[data-trend-view]").forEach((el) => el.classList.toggle("active", el.dataset.trendView === view));
+      document.querySelectorAll(".trend-view").forEach((el) => el.classList.toggle("active", el.id === `trend-${view}`));
+    });
+  });
+
+  document.querySelectorAll("[data-trend-range]").forEach((button) => {
+    if (button.dataset.loaderBound) return;
+    button.dataset.loaderBound = "1";
+    button.addEventListener("click", () => {
+      document.querySelectorAll("[data-trend-range]").forEach((el) => el.classList.toggle("active", el === button));
+    });
+  });
+
+  document.querySelectorAll("[data-trend-series]").forEach((button) => {
+    if (button.dataset.loaderBound) return;
+    button.dataset.loaderBound = "1";
+    button.addEventListener("click", () => {
+      document.querySelectorAll("[data-trend-series]").forEach((el) => el.classList.toggle("active", el === button));
+    });
+  });
+
+  document.querySelectorAll("[data-calendar-mode]").forEach((button) => {
+    if (button.dataset.loaderBound) return;
+    button.dataset.loaderBound = "1";
+    button.addEventListener("click", () => {
+      document.querySelectorAll("[data-calendar-mode]").forEach((el) => el.classList.toggle("active", el === button));
+    });
+  });
+
+  document.querySelectorAll("[data-market]").forEach((button) => {
+    if (button.dataset.loaderBound) return;
+    button.dataset.loaderBound = "1";
+    button.addEventListener("click", () => {
+      document.querySelectorAll("[data-market]").forEach((el) => el.classList.toggle("active", el === button));
+    });
+  });
+
   const passwordButton = document.getElementById("backup-password-button");
   if (passwordButton && !passwordButton.dataset.loaderBound) {
     passwordButton.dataset.loaderBound = "1";
@@ -193,6 +235,7 @@ function installEmergencyInteractions() {
       try {
         await localDb.importDatasetFile(file);
         status(`已匯入 ${file.name}，資料已寫入本機 IndexedDB。`, "profit");
+        window.setTimeout(() => window.location.reload(), 500);
       } catch (err) {
         status(`匯入失敗：${err.message || err}`, "loss");
       }
@@ -206,7 +249,7 @@ function ensureSheetImportInput() {
   input = document.createElement("input");
   input.id = "sheet-import-input";
   input.type = "file";
-  input.accept = ".json,application/json";
+  input.accept = ".xlsx,.xls,.json,application/json";
   input.className = "hidden-file-input";
   input.style.display = "none";
   document.body.appendChild(input);
