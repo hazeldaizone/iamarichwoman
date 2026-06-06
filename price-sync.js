@@ -1,5 +1,9 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 const YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/";
+const CORS_PROXY_URLS = [
+  (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+];
 const FALLBACK_USD_TWD = 31.5;
 const TICKER_DISPLAY = {
   "6208": "006208",
@@ -169,9 +173,7 @@ async function fetchYahooHistory(symbol, start, end) {
   const period1 = Math.floor(start.getTime() / 1000);
   const period2 = Math.floor(addDays(end, 2).getTime() / 1000);
   const url = `${YAHOO_CHART_URL}${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d&events=history&includeAdjustedClose=true`;
-  const response = await fetch(url, { cache: "no-cache" });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const payload = await response.json();
+  const payload = await fetchYahooJson(url);
   const result = payload?.chart?.result?.[0];
   if (!result) throw new Error(payload?.chart?.error?.description || "Yahoo 無資料");
   const timestamps = result.timestamp || [];
@@ -180,6 +182,21 @@ async function fetchYahooHistory(symbol, start, end) {
     .map((ts, index) => ({ date: new Date(ts * 1000), close: Number(closes[index]) }))
     .filter((row) => row.close > 0)
     .map((row) => ({ date: startOfDay(row.date), close: row.close }));
+}
+
+async function fetchYahooJson(url) {
+  const candidates = [url, ...CORS_PROXY_URLS.map((proxy) => proxy(url))];
+  const errors = [];
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(candidate, { cache: "no-cache" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      errors.push(err.message || String(err));
+    }
+  }
+  throw new Error(errors.join(" / "));
 }
 
 function latestExistingCloseBefore(existingByKey, instrument, beforeDate) {
