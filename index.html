@@ -70,15 +70,32 @@
               <span id="local-db-source">IndexedDB</span>
             </div>
             <div class="local-actions">
-              <button class="secondary-button" id="backup-password-button" type="button">設定備份密碼</button>
-              <button class="secondary-button" id="backup-now-button" type="button">立即加密備份</button>
-              <button class="secondary-button" id="backup-download-button" type="button">匯出最新備份</button>
-              <button class="secondary-button" id="local-snapshot-button" type="button">建立本地快照</button>
+              <button class="secondary-button" id="backup-password-button" type="button">
+                <span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M15.5 7.5a4 4 0 1 0-2.1 3.5L15 12.6V15h2.4l1.2 1.2H21v-2.8l-5.5-5.9Z"/><path d="M8 8h.01"/></svg></span>
+                設定備份密碼
+              </button>
+              <button class="secondary-button" id="backup-now-button" type="button">
+                <span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 11V8a5 5 0 0 1 10 0v3"/><path d="M6 11h12v10H6z"/><path d="M12 15v3"/></svg></span>
+                立即加密備份
+              </button>
+              <button class="secondary-button" id="backup-download-button" type="button">
+                <span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v11"/><path d="m8 10 4 4 4-4"/><path d="M5 19h14"/></svg></span>
+                匯出最新備份
+              </button>
+              <button class="secondary-button" id="local-snapshot-button" type="button">
+                <span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 7h2l1.5-2h3L15 7h2a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-7a3 3 0 0 1 3-3Z"/><path d="M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/></svg></span>
+                建立本地快照
+              </button>
               <label class="secondary-button file-button">
+                <span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21V10"/><path d="m8 14 4-4 4 4"/><path d="M5 5h14"/></svg></span>
                 匯入加密備份
                 <input id="backup-restore-input" type="file" accept=".assetbackup,application/json">
               </label>
-              <button class="secondary-button" id="bootstrap-import-button" type="button">重新匯入 Sheet 匯出檔</button>
+              <button class="secondary-button" id="bootstrap-import-button" type="button">
+                <span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M4 10h16"/><path d="M9 5v14"/><path d="M15 5v14"/></svg></span>
+                匯入Sheet檔
+              </button>
+              <input id="sheet-import-input" class="hidden-file-input" type="file" accept=".xlsx,.xls,.json,application/json">
             </div>
             <div class="trade-result hidden" id="local-db-status"></div>
           </section>

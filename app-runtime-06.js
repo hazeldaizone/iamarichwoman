@@ -1,4 +1,10 @@
-w.date),
+ await saveLocalDataset(recalculateDataset(dataset));
+  applyDataset(state.dataset);
+}
+
+function serializeTrendRows(rows) {
+  return rows.map((row) => ({
+    "日期": dateKey(row.date),
     "快照時間": row.snapshotTime,
     "淨資產": row.netWorth,
     "台股": row.tw,
@@ -225,7 +231,10 @@ function bindLocalDataControls() {
   });
   document.getElementById("local-snapshot-button")?.addEventListener("click", handleLocalSnapshot);
   document.getElementById("backup-restore-input")?.addEventListener("change", handleBackupRestore);
-  document.getElementById("bootstrap-import-button")?.addEventListener("click", handleBootstrapImport);
+  document.getElementById("bootstrap-import-button")?.addEventListener("click", () => {
+    document.getElementById("sheet-import-input")?.click();
+  });
+  document.getElementById("sheet-import-input")?.addEventListener("change", handleSheetImport);
 }
 
 async function setBackupPassword() {
@@ -282,6 +291,21 @@ async function handleBootstrapImport() {
   }
 }
 
+async function handleSheetImport(event) {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  if (!file) return;
+  try {
+    const dataset = await importDatasetFile(file);
+    applyDataset(dataset);
+    renderAll();
+    updateLocalDbStatus(`已匯入 ${file.name}，資料已寫入本機 IndexedDB。`, "profit");
+    window.setTimeout(() => window.location.reload(), 500);
+  } catch (err) {
+    updateLocalDbStatus(`匯入失敗：${err.message || err}`, "loss");
+  }
+}
+
 async function handleLocalSnapshot() {
   try {
     const dataset = state.dataset || { schemaVersion: 1, source: "local", data: {} };
@@ -328,30 +352,4 @@ async function runAutoBackup() {
 function updateLocalDbSource(dataset) {
   const source = dataset?.source || "本地資料庫";
   const exportedAt = dataset?.exportedAt ? formatDateTime(dataset.exportedAt) : "";
-  setText("local-db-source", exportedAt ? `${source} / ${exportedAt}` : source);
-}
-
-function updateLocalDbStatus(message, tone = "neutral") {
-  const el = document.getElementById("local-db-status");
-  if (!el) return;
-  el.classList.remove("hidden");
-  el.innerHTML = `<strong class="${tone}">${escapeHtml(message)}</strong>`;
-}
-
-async function uploadEncryptedBackup(backup) {
-  const endpoint = window.ASSET_PWA_CONFIG?.encryptedBackupEndpoint || "";
-  if (!endpoint) return "，尚未設定雲端端點";
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(backup),
-    });
-    if (!response.ok) throw new Error(String(response.status));
-    return "，已同步加密檔到雲端";
-  } catch (err) {
-    return `，雲端同步失敗(${err.message || err})`;
-  }
-}
-
-function 
+  setText("local-db-source", exportedAt ? `${source} / $

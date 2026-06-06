@@ -922,7 +922,7 @@ select {
   white-space: nowrap;
 }
 
-.local-actions .secondary-button::before {
+.action-icon {
   display: inline-grid;
   flex: 0 0 18px;
   width: 18px;
@@ -930,39 +930,41 @@ select {
   place-items: center;
   border-radius: 999px;
   color: #111113;
-  font-size: 11px;
-  font-weight: 950;
 }
 
-.local-actions .secondary-button:nth-child(1)::before {
-  content: "鑰";
+.action-icon svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.local-actions .secondary-button:nth-child(1) .action-icon {
   background: #d9b46f;
 }
 
-.local-actions .secondary-button:nth-child(2)::before {
-  content: "鎖";
+.local-actions .secondary-button:nth-child(2) .action-icon {
   background: #6fc2a4;
 }
 
-.local-actions .secondary-button:nth-child(3)::before {
-  content: "↓";
+.local-actions .secondary-button:nth-child(3) .action-icon {
   background: #6d79ff;
   color: white;
 }
 
-.local-actions .secondary-button:nth-child(4)::before {
-  content: "相";
+.local-actions .secondary-button:nth-child(4) .action-icon {
   background: #f2b33d;
 }
 
-.local-actions .secondary-button:nth-child(5)::before {
-  content: "↑";
+.local-actions .secondary-button:nth-child(5) .action-icon {
   background: #60a5fa;
   color: white;
 }
 
-.local-actions .secondary-button:nth-child(6)::before {
-  content: "表";
+.local-actions .secondary-button:nth-child(6) .action-icon {
   background: #74747e;
   color: white;
 }
@@ -984,6 +986,10 @@ select {
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
+}
+
+.hidden-file-input {
+  display: none !important;
 }
 
 .hidden {

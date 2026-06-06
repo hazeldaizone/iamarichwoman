@@ -1,4 +1,30 @@
-bindAuthForm() {
+{exportedAt}` : source);
+}
+
+function updateLocalDbStatus(message, tone = "neutral") {
+  const el = document.getElementById("local-db-status");
+  if (!el) return;
+  el.classList.remove("hidden");
+  el.innerHTML = `<strong class="${tone}">${escapeHtml(message)}</strong>`;
+}
+
+async function uploadEncryptedBackup(backup) {
+  const endpoint = window.ASSET_PWA_CONFIG?.encryptedBackupEndpoint || "";
+  if (!endpoint) return "，尚未設定雲端端點";
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(backup),
+    });
+    if (!response.ok) throw new Error(String(response.status));
+    return "，已同步加密檔到雲端";
+  } catch (err) {
+    return `，雲端同步失敗(${err.message || err})`;
+  }
+}
+
+function bindAuthForm() {
   document.getElementById("auth-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const pin = document.getElementById("auth-pin").value.trim();
@@ -316,27 +342,4 @@ function firstDisplayWeekday(date) {
   return day - 1;
 }
 
-function calcMonthlyCalendarRate(monthDate, total) {
-  const rows = calendarRowsInMonth(monthDate);
-  if (!rows.length) return 0;
-  const first = rows[0];
-  let base = first.tw + first.us - getCalendarPnl(first);
-  if (state.calendarMode === "tw") base = first.tw - first.twPnl;
-  if (state.calendarMode === "us") base = first.us - first.usPnl;
-  return safeRate(total, base);
-}
-
-function isComputedInvestmentChild(groupName, childName) {
-  return groupName === "投資" && ["台股", "美股"].includes(childName);
-}
-
-function latestByDate(rows) {
-  return rows.reduce((pick, row) => {
-    const current = parseDate(row.date);
-    const picked = pick ? parseDate(pick.date) : null;
-    if (!current) return pick;
-    return !picked || current > picked ? row : pick;
-  }, null);
-}
-
-function metricCard(label, value,
+function calcMonthlyCalendar

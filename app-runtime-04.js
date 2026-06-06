@@ -1,4 +1,6 @@
-realizedPnl)}
+tQty(stock.qty)} 股`)}
+      ${metricMini("股票現價", formatPriceWithUnit(stock.price, stock.market))}
+      ${metricMini("未實現損益", formatSignedMoney(stock.unrealizedPnl), stock.unrealizedPnl)}
       ${metricMini("報酬率", formatSignedPercent(stock.unrealizedRate), stock.unrealizedRate)}
     </div>
   `;
@@ -290,7 +292,4 @@ function renderSellLotSelector() {
   wrap.classList.remove("hidden");
   wrap.innerHTML = `
     <div class="lot-selector-head">
-      <div class="lot-selector-title">選擇賣出批次</div>
-      <button class="lot-selector-close" id="trade-sell-close" type="button" aria-label="關閉賣出">×</button>
-    </div>
-    ${lots.length ? lots.map(renderTradeLot).join(
+      <div class="lot-selector-title">選擇賣出批次

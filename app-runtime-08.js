@@ -1,4 +1,27 @@
- sub, tone = null) {
+Rate(monthDate, total) {
+  const rows = calendarRowsInMonth(monthDate);
+  if (!rows.length) return 0;
+  const first = rows[0];
+  let base = first.tw + first.us - getCalendarPnl(first);
+  if (state.calendarMode === "tw") base = first.tw - first.twPnl;
+  if (state.calendarMode === "us") base = first.us - first.usPnl;
+  return safeRate(total, base);
+}
+
+function isComputedInvestmentChild(groupName, childName) {
+  return groupName === "投資" && ["台股", "美股"].includes(childName);
+}
+
+function latestByDate(rows) {
+  return rows.reduce((pick, row) => {
+    const current = parseDate(row.date);
+    const picked = pick ? parseDate(pick.date) : null;
+    if (!current) return pick;
+    return !picked || current > picked ? row : pick;
+  }, null);
+}
+
+function metricCard(label, value, sub, tone = null) {
   return `
     <article class="metric-card">
       <span class="metric-label">${label}</span>

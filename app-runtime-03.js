@@ -1,4 +1,5 @@
-ne>
+ke="none"></polyline>
+    <polyline points="${points.join(" ")}" fill="none" stroke="${config.color}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
     <text x="${pad}" y="${height - 8}" fill="#9b9ba6" font-size="11" font-weight="700">${formatMoney(min)}</text>
     <text x="${width - pad}" y="${height - 8}" fill="#9b9ba6" font-size="11" font-weight="700" text-anchor="end">${formatMoney(max)}</text>
     <text x="${pad}" y="24" fill="#9b9ba6" font-size="11" font-weight="700">${formatDate(rows[0].date)}</text>
@@ -257,6 +258,4 @@ function renderDetailSummaryCard(stock, detail) {
     <div class="detail-summary-card">
       ${metricMini("持有成本", formatMoney(stock.cost))}
       ${metricMini("目前市值", formatMoney(stock.value))}
-      ${metricMini("庫存股數", `${formatQty(stock.qty)} 股`)}
-      ${metricMini("股票現價", formatPriceWithUnit(stock.price, stock.market))}
-      ${metricMini("未實現損益", formatSignedMoney(stock.un
+      ${metricMini("庫存股數", `${forma

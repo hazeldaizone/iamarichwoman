@@ -1,4 +1,9 @@
-賣出報酬率"]),
+["美元"]),
+    fx: toNumber(row["美元匯率"]),
+    net: toNumber(row["淨收支"]),
+    realizedPnl: toNumber(row["已實現損益"]),
+    remCost: toNumber(row["剩餘成本"]),
+    sellRate: toRate(row["賣出報酬率"]),
     detail: row["損益細項"] || "",
   };
 }
@@ -325,5 +330,4 @@ function renderLineChart(rows, config = TREND_SERIES.netWorth) {
         <stop offset="100%" stop-color="${config.color}" stop-opacity="0"></stop>
       </linearGradient>
     </defs>
-    <polyline points="${points.join(" ")} ${width - pad},${height - pad} ${pad},${height - pad}" fill="url(#chartFill)" stroke="none"></polyline>
-    <polyline points="${points.join(" ")}" fill="none" stroke="${config.color}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyli
+    <polyline points="${points.join(" ")} ${width - pad},${height - pad} ${pad},${height - pad}" fill="url(#chartFill)" stro

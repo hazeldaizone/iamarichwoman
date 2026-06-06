@@ -3,6 +3,7 @@ const {
   exportEncryptedBackup,
   getBackupRecords,
   getMeta,
+  importDatasetFile,
   loadLocalDataset,
   maybeAutoBackup,
   reloadFromBootstrap,
@@ -64,7 +65,7 @@ const TREND_SERIES = {
   cash: { label: "流動資金", field: "cash", pnl: "cashPnl", rate: "cashRate", color: "#f2b33d" },
 };
 
-document.addEventListener("DOMContentLoaded", async () => {
+async function initApp() {
   bindAuthForm();
   bindNavigation();
   bindTrendTabs();
@@ -81,7 +82,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     return;
   }
   await loadData().catch(showAppError);
-});
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => initApp().catch(showAppError), { once: true });
+} else {
+  initApp().catch(showAppError);
+}
 
 async function loadData() {
   await loadIndexedDbData();
@@ -386,9 +393,4 @@ function normalizeTransaction(row) {
     divQty: toNumber(row["配息股數"]),
     other: toNumber(row["匯費／其他費用"]),
     divAmount: toNumber(row["配息金額"]),
-    usd: toNumber(row["美元"]),
-    fx: toNumber(row["美元匯率"]),
-    net: toNumber(row["淨收支"]),
-    realizedPnl: toNumber(row["已實現損益"]),
-    remCost: toNumber(row["剩餘成本"]),
-    sellRate: toRate(row["
+    usd: toNumber(row

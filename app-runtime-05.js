@@ -1,4 +1,7 @@
-"") : `<div class="empty-state">查無可賣庫存</div>`}
+</div>
+      <button class="lot-selector-close" id="trade-sell-close" type="button" aria-label="關閉賣出">×</button>
+    </div>
+    ${lots.length ? lots.map(renderTradeLot).join("") : `<div class="empty-state">查無可賣庫存</div>`}
   `;
   document.getElementById("trade-sell-close")?.addEventListener("click", cancelSellTrade);
 
@@ -327,10 +330,4 @@ async function persistLocalState() {
     dailyPrices: dataset.data?.dailyPrices || [],
     dailyAssetSnapshots: dataset.data?.dailyAssetSnapshots || [],
   };
-  state.dataset = await saveLocalDataset(recalculateDataset(dataset));
-  applyDataset(state.dataset);
-}
-
-function serializeTrendRows(rows) {
-  return rows.map((row) => ({
-    "日期": dateKey(ro
+  state.dataset =
