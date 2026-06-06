@@ -46,6 +46,14 @@ export async function reloadFromBootstrap() {
   return dataset;
 }
 
+export async function importDatasetFile(file) {
+  const dataset = await readDatasetFile(file);
+  await saveLocalDataset(dataset);
+  await setMeta("lastImportedAt", new Date().toISOString());
+  await setMeta("lastImportedFileName", file.name || "");
+  return dataset;
+}
+
 export async function saveLocalDataset(dataset) {
   const db = await openDb();
   const next = {
@@ -134,6 +142,38 @@ async function loadBootstrapDataset() {
   const response = await fetch(BOOTSTRAP_PATH, { cache: "no-cache" });
   if (!response.ok) return emptyDataset();
   return response.json();
+}
+
+async function readDatasetFile(file) {
+  const name = String(file?.name || "");
+  const lowerName = name.toLowerCase();
+  if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+    throw new Error("目前 PWA 不能直接解析 .xlsx，請先匯入由資產總覽.xlsx 轉出的 bootstrap-data.json。");
+  }
+
+  const parsed = JSON.parse(await file.text());
+  if (parsed?.ciphertext && parsed?.iv) {
+    throw new Error("這是加密備份檔，請改用「匯入加密備份」。");
+  }
+  if (!parsed?.data || typeof parsed.data !== "object") {
+    throw new Error("檔案格式不符合 PWA 資料庫匯入格式。");
+  }
+
+  return {
+    schemaVersion: parsed.schemaVersion || 1,
+    source: parsed.source || name || "imported-sheet-file",
+    exportedAt: parsed.exportedAt || new Date().toISOString(),
+    data: {
+      trend: parsed.data.trend || [],
+      overview: parsed.data.overview || [],
+      stocks: parsed.data.stocks || [],
+      transactions: parsed.data.transactions || [],
+      retirement: parsed.data.retirement || [],
+      dailyAssetSnapshots: parsed.data.dailyAssetSnapshots || [],
+      dailyHoldings: parsed.data.dailyHoldings || [],
+      dailyPrices: parsed.data.dailyPrices || [],
+    },
+  };
 }
 
 function emptyDataset() {
