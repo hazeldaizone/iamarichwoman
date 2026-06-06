@@ -1,18 +1,10 @@
-const CACHE_NAME = "asset-pwa-v19";
+const CACHE_NAME = "asset-pwa-v20";
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./config.js",
   "./app.js",
-  "./app-runtime-01.js",
-  "./app-runtime-02.js",
-  "./app-runtime-03.js",
-  "./app-runtime-04.js",
-  "./app-runtime-05.js",
-  "./app-runtime-06.js",
-  "./app-runtime-07.js",
-  "./app-runtime-08.js",
   "./local-db.js",
   "./local-calculator.js",
   "./bootstrap-data.json",

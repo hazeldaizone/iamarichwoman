@@ -29,7 +29,7 @@ export function recalculateDataset(dataset, options = {}) {
   const transactions = recalculateTransactions(data.transactions || [], priceByKey, liveFx);
   const stocks = buildStockSummary(transactions, data.stocks || [], liveFx);
   const overview = rebuildOverview(data.overview || [], stocks);
-  const trend = options.snapshot ? upsertTodaySnapshot(data.trend || [], overview, now) : (data.trend || []);
+  const trend = options.snapshot ? upsertTodaySnapshot(data.trend || [], overview, transactions, now) : (data.trend || []);
   return {
     ...dataset,
     exportedAt: new Date().toISOString(),
@@ -409,7 +409,7 @@ function rebuildOverview(rows, stocks) {
   return next;
 }
 
-function upsertTodaySnapshot(rows, overview, now) {
+function upsertTodaySnapshot(rows, overview, transactions, now) {
   const values = readOverviewValues(overview);
   const effective = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
   const targetKey = dateKey(effective);
@@ -420,6 +420,12 @@ function upsertTodaySnapshot(rows, overview, now) {
   const first = normalized
     .filter((row) => number(row["淨資產"]))
     .sort((a, b) => parseDate(a["日期"]) - parseDate(b["日期"]))[0];
+  const flows = buildInvestmentFlowsByDate(transactions).get(targetKey) || emptyInvestmentFlow();
+  const twPnl = previous ? round0(values.tw - number(previous["台股"]) - flows.tw.buy + flows.tw.sell + flows.tw.income) : 0;
+  const usPnl = previous ? round0(values.us - number(previous["美股"]) - flows.us.buy + flows.us.sell + flows.us.income) : 0;
+  const cashPnl = previous ? round0(values.cash - number(previous["流動資金"])) : 0;
+  const stockPnl = twPnl + usPnl;
+  const previousInvestment = previous ? number(previous["台股"]) + number(previous["美股"]) : 0;
   const row = {
     "日期": targetKey,
     "快照時間": now.toISOString(),
@@ -430,12 +436,14 @@ function upsertTodaySnapshot(rows, overview, now) {
     "台股占比": safeRatio(values.tw, values.netWorth),
     "美股占比": safeRatio(values.us, values.netWorth),
     "流動資金占比": safeRatio(values.cash, values.netWorth),
-    "每日損益": previous ? round0(values.netWorth - number(previous["淨資產"])) : 0,
-    "每日報酬率": previous ? safeRatio(values.netWorth - number(previous["淨資產"]), number(previous["淨資產"])) : 0,
-    "台股每日損益": previous ? round0(values.tw - number(previous["台股"])) : 0,
-    "台股每日報酬率": previous ? safeRatio(values.tw - number(previous["台股"]), number(previous["台股"])) : 0,
-    "美股每日損益": previous ? round0(values.us - number(previous["美股"])) : 0,
-    "美股每日報酬率": previous ? safeRatio(values.us - number(previous["美股"]), number(previous["美股"])) : 0,
+    "每日損益": stockPnl,
+    "每日報酬率": previous ? safeRatio(stockPnl, previousInvestment) : 0,
+    "台股每日損益": twPnl,
+    "台股每日報酬率": previous ? safeRatio(twPnl, number(previous["台股"])) : 0,
+    "美股每日損益": usPnl,
+    "美股每日報酬率": previous ? safeRatio(usPnl, number(previous["美股"])) : 0,
+    "流動資金收支": cashPnl,
+    "流動資金收支率": previous ? safeRatio(cashPnl, number(previous["流動資金"])) : 0,
     "累積報酬率": first ? safeRatio(values.netWorth, number(first["淨資產"])) - 1 : 0,
   };
 
@@ -460,6 +468,40 @@ function readOverviewValues(rows) {
     if (currentCat.includes("流動資金") && sub) cash += value;
   });
   return { netWorth, tw, us, cash };
+}
+
+function buildInvestmentFlowsByDate(rows = []) {
+  const map = new Map();
+  rows.forEach((row) => {
+    const date = parseDate(row["日期"]);
+    const market = text(row["市場"]) === "美股" ? "us" : text(row["市場"]) === "台股" ? "tw" : "";
+    const type = text(row["交易類型"]);
+    if (!date || !market) return;
+    const key = dateKey(date);
+    const flow = map.get(key) || emptyInvestmentFlow();
+    const amount = investmentFlowAmount(row);
+    if (type === "買入") flow[market].buy += amount;
+    if (type === "賣出") flow[market].sell += amount;
+    if (["配息", "股利"].includes(type)) flow[market].income += amount;
+    map.set(key, flow);
+  });
+  return map;
+}
+
+function emptyInvestmentFlow() {
+  return {
+    tw: { buy: 0, sell: 0, income: 0 },
+    us: { buy: 0, sell: 0, income: 0 },
+  };
+}
+
+function investmentFlowAmount(row) {
+  const type = text(row["交易類型"]);
+  const net = Math.abs(number(row["淨收支"]));
+  if (net) return net;
+  if (["配息", "股利"].includes(type)) return Math.abs(number(row["配息金額"]) || number(row["配息單價"]) * number(row["配息股數"]));
+  const fx = text(row["市場"]) === "美股" ? number(row["美元匯率"]) || 1 : 1;
+  return Math.abs(number(row["成交單價"]) * number(row["股數"]) * fx + number(row["手續費／稅金"]) + number(row["匯費／其他費用"]));
 }
 
 function generateBuyIds(rows) {
