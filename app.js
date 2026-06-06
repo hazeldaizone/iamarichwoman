@@ -14,9 +14,8 @@ const APP_RUNTIME_CHUNKS = [
 
 const runtimeSource = await Promise.all(
   APP_RUNTIME_CHUNKS.map(async (name) => {
-    const response = await fetch(new URL(name, import.meta.url), { cache: "no-cache" });
-    if (!response.ok) throw new Error(`PWA 載入失敗：${name}`);
-    return response.text();
+    const module = await import(`./${name}?v=18`);
+    return module.default;
   }),
 );
 
