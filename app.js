@@ -522,11 +522,15 @@ function renderOverview() {
 
   setText("latest-date", formatDate(latest.date));
   setText("net-worth", formatMoney(latest.netWorth));
-  const change = latest.totalPnl;
-  const changeRate = latest.totalRate;
+  const latestPnl = latestMarketPnlRow();
   const changeEl = document.getElementById("net-change");
-  changeEl.textContent = `昨日股票 ${formatSignedMoney(change)} / ${formatSignedPercent(changeRate)}`;
-  setTone(changeEl, change);
+  if (latestPnl) {
+    changeEl.textContent = `最近股票 ${formatSignedMoney(latestPnl.totalPnl)} / ${formatSignedPercent(latestPnl.totalRate)}`;
+    setTone(changeEl, latestPnl.totalPnl);
+  } else {
+    changeEl.textContent = "股票損益資料不足";
+    setTone(changeEl, null);
+  }
 
   setText("allocation-total", formatMoney(latest.netWorth));
   renderRetirementProgress(latest);
@@ -735,14 +739,18 @@ function renderTrend() {
 
   const latest = state.trend[state.trend.length - 1];
   if (!latest) return;
-  const selectedPnl = latest[config.pnl] || 0;
-  const selectedRate = latest[config.rate] || 0;
+  const selectedStats = latestPnlStatsForSeries(state.activeTrendSeries);
+  const selectedPnl = selectedStats?.pnl || 0;
+  const selectedRate = selectedStats?.rate || 0;
   const comparisonMetrics = Object.entries(TREND_SERIES)
     .filter(([key]) => key !== state.activeTrendSeries && key !== "netWorth")
-    .map(([, item]) => metricCard(item.pnlLabel || `${item.label}每日損益`, formatSignedMoney(latest[item.pnl] || 0), formatSignedPercent(latest[item.rate] || 0), latest[item.pnl] || 0));
+    .map(([key, item]) => {
+      const stats = latestPnlStatsForSeries(key);
+      return metricCard(item.pnlLabel || `${item.label}每日損益`, stats ? formatSignedMoney(stats.pnl) : "--", stats ? formatSignedPercent(stats.rate) : "資料不足", stats?.pnl ?? null);
+    });
 
   document.getElementById("trend-metrics").innerHTML = [
-    metricCard(config.pnlLabel || `${config.label}每日損益`, formatSignedMoney(selectedPnl), formatSignedPercent(selectedRate), selectedPnl),
+    metricCard(config.pnlLabel || `${config.label}每日損益`, selectedStats ? formatSignedMoney(selectedPnl) : "--", selectedStats ? formatSignedPercent(selectedRate) : "資料不足", selectedStats ? selectedPnl : null),
     metricCard(`${config.label}目前數值`, formatMoney(latest[config.field]), "最新快照"),
     ...comparisonMetrics.slice(0, 2),
   ].join("");
@@ -854,11 +862,12 @@ function renderMonthSummary(targetId, monthDate) {
 
 function renderAnalysis() {
   const latest = state.trend[state.trend.length - 1];
-  const rows = rowsInMonth(state.calendarDate);
+  const rows = marketPnlRowsInMonth(state.calendarDate);
+  const cashRows = cashRowsInMonth(state.calendarDate);
   const monthlyTotal = rows.reduce((sum, row) => sum + row.totalPnl, 0);
   const monthlyTw = rows.reduce((sum, row) => sum + row.twPnl, 0);
   const monthlyUs = rows.reduce((sum, row) => sum + row.usPnl, 0);
-  const monthlyCash = rows.reduce((sum, row) => sum + row.cashPnl, 0);
+  const monthlyCash = cashRows.reduce((sum, row) => sum + row.cashPnl, 0);
   const averageRate = rows.length ? rows.reduce((sum, row) => sum + row.totalRate, 0) / rows.length : 0;
 
   const analysis = [
@@ -2171,7 +2180,7 @@ function jsonpRequest(action, params = {}) {
 
 function showDayDetail(key) {
   const targetDate = parseDate(key);
-  const row = (targetDate ? calendarRowsInMonth(targetDate) : buildCalendarRows()).find((item) => dateKey(item.date) === key);
+  const row = (targetDate ? calendarRowsInMonth(targetDate) : []).find((item) => dateKey(item.date) === key);
   if (!row) return;
   const dialog = document.getElementById("day-dialog");
   document.getElementById("day-detail").innerHTML = `
@@ -2202,126 +2211,53 @@ function getCalendarRate(row) {
   return row.totalRate;
 }
 
-function rowsInMonth(date) {
-  return state.trend.filter((row) => row.date.getFullYear() === date.getFullYear() && row.date.getMonth() === date.getMonth());
-}
-
 function calendarRowsInMonth(date) {
-  const inTargetMonth = (row) => row.date.getFullYear() === date.getFullYear() && row.date.getMonth() === date.getMonth();
-  if (state.calendarMode !== "cash") {
-    const rows = mergeCurrentStockPnlRow(buildCalendarRowsFromHoldingsAndPrices())
-      .filter(inTargetMonth)
-      .filter((row) => hasCalendarMovement(row));
-    if (rows.length) return rows;
-  }
-  return mergeCurrentStockPnlRow(buildCalendarRows())
-    .filter(inTargetMonth)
+  return (state.calendarMode === "cash" ? cashRowsInMonth(date) : marketPnlRowsInMonth(date))
     .filter((row) => hasCalendarMovement(row));
 }
 
-function buildCalendarRows() {
-  if (state.dailyAssetSnapshots.length) return mergeCurrentStockPnlRow(state.dailyAssetSnapshots.filter((row) => !isWeekend(row.date))).sort((a, b) => a.date - b.date);
-
-  const merged = new Map();
-  state.trend.forEach((row) => {
-    const represented = representedTradingDate(row);
-    if (!represented || isWeekend(represented)) return;
-    const twPnl = row.twPnl ?? 0;
-    const usPnl = row.usPnl ?? 0;
-    const current = {
-      ...row,
-      date: represented,
-      twPnl,
-      usPnl,
-      totalPnl: twPnl + usPnl,
-      twRate: row.twRate ?? 0,
-      usRate: row.usRate ?? 0,
-    };
-    current.totalRate = safeRate(current.totalPnl, Math.max(0, row.tw + row.us - current.totalPnl));
-    const key = dateKey(represented);
-    const existing = merged.get(key);
-    if (!existing || snapshotPriority(current) >= snapshotPriority(existing)) merged.set(key, current);
-  });
-  return mergeCurrentStockPnlRow([...merged.values()]).sort((a, b) => a.date - b.date);
+function marketPnlRowsInMonth(date) {
+  return buildMarketPnlRows().filter((row) => row.date.getFullYear() === date.getFullYear() && row.date.getMonth() === date.getMonth());
 }
 
-function mergeCurrentStockPnlRow(rows) {
-  const current = buildCurrentStockPnlRow();
-  if (!current) return rows;
-  const merged = new Map(rows.map((row) => [dateKey(row.date), row]));
-  const existing = merged.get(dateKey(current.date));
-  merged.set(dateKey(current.date), {
-    ...existing,
-    ...current,
-    cashPnl: existing?.cashPnl ?? current.cashPnl,
-    cashRate: existing?.cashRate ?? current.cashRate,
-  });
-  return [...merged.values()].sort((a, b) => a.date - b.date);
+function cashRowsInMonth(date) {
+  return buildCashRows().filter((row) => row.date.getFullYear() === date.getFullYear() && row.date.getMonth() === date.getMonth());
 }
 
-function buildCurrentStockPnlRow() {
-  if (!state.stocks.length) return null;
-  const date = currentStockPnlDate();
-  if (!date || isWeekend(date)) return null;
-  const overview = currentOverviewValues();
-  const twStocks = state.stocks.filter((stock) => stock.market === "台股");
-  const usStocks = state.stocks.filter((stock) => stock.market === "美股");
-  const tw = twStocks.reduce((sum, stock) => sum + stock.value, 0) || overview.tw;
-  const us = usStocks.reduce((sum, stock) => sum + stock.value, 0) || overview.us;
-  const twPnl = twStocks.reduce((sum, stock) => sum + stock.todayPnl, 0);
-  const usPnl = usStocks.reduce((sum, stock) => sum + stock.todayPnl, 0);
-  if (!tw && !us && !twPnl && !usPnl) return null;
-  const totalPnl = twPnl + usPnl;
-  const cash = overview.cash;
-  const netWorth = overview.netWorth || tw + us + cash;
-  return {
-    date,
-    netWorth,
-    tw,
-    us,
-    cash,
-    twPnl,
-    usPnl,
-    totalPnl,
-    twRate: safeRate(twPnl, tw - twPnl),
-    usRate: safeRate(usPnl, us - usPnl),
-    totalRate: safeRate(totalPnl, tw + us - totalPnl),
-    cashPnl: 0,
-    cashRate: 0,
-    twOpen: twStocks.length > 0,
-    usOpen: usStocks.length > 0,
-    source: "股票總表今日損益",
-  };
+function latestMarketPnlRow() {
+  return buildMarketPnlRows().reduce((pick, row) => (!pick || row.date > pick.date ? row : pick), null);
 }
 
-function currentStockPnlDate() {
-  const exported = parseDate(state.dataset?.exportedAt);
-  if (exported) return isWeekend(exported) ? previousWeekday(exported) : exported;
-  const maxTx = state.transactions.reduce((pick, tx) => {
-    const date = parseDate(tx.date);
-    if (!date) return pick;
-    return !pick || date > pick ? date : pick;
-  }, null);
-  return maxTx && isWeekend(maxTx) ? previousWeekday(maxTx) : maxTx;
+function latestCashPnlRow() {
+  return buildCashRows().reduce((pick, row) => (!pick || row.date > pick.date ? row : pick), null);
 }
 
-function currentOverviewValues() {
-  let currentCat = "";
-  let netWorth = 0;
-  let tw = 0;
-  let us = 0;
-  let cash = 0;
-  state.overview.forEach((row) => {
-    const cat = String(row["大類別"] || "").trim();
-    const sub = String(row["子項目"] || "").trim();
-    const value = toNumber(row["金額 (TWD)"]);
-    if (cat) currentCat = cat;
-    if (cat === "總計") netWorth = value;
-    if (sub === "台股") tw = value;
-    if (sub === "美股") us = value;
-    if (currentCat.includes("流動資金") && sub) cash += value;
-  });
-  return { netWorth, tw, us, cash };
+function latestPnlStatsForSeries(seriesKey) {
+  if (seriesKey === "cash") {
+    const row = latestCashPnlRow();
+    return row ? { pnl: row.cashPnl, rate: row.cashRate } : null;
+  }
+  const row = latestMarketPnlRow();
+  if (!row) return null;
+  if (seriesKey === "tw") return { pnl: row.twPnl, rate: row.twRate };
+  if (seriesKey === "us") return { pnl: row.usPnl, rate: row.usRate };
+  return { pnl: row.totalPnl, rate: row.totalRate };
+}
+
+function buildCashRows() {
+  const sourceRows = state.dailyAssetSnapshots.length ? state.dailyAssetSnapshots : state.trend;
+  return sourceRows
+    .filter((row) => !isWeekend(row.date))
+    .sort((a, b) => a.date - b.date)
+    .map((row, index, rows) => {
+      const prev = rows[index - 1];
+      const cashPnl = prev ? row.cash - prev.cash : row.cashPnl || 0;
+      return {
+        ...row,
+        cashPnl,
+        cashRate: prev ? safeRate(cashPnl, prev.cash) : row.cashRate || 0,
+      };
+    });
 }
 
 function hasCalendarMovement(row) {
@@ -2331,7 +2267,7 @@ function hasCalendarMovement(row) {
   return row.twOpen || row.usOpen || row.totalPnl !== 0 || row.twPnl !== 0 || row.usPnl !== 0;
 }
 
-function buildCalendarRowsFromHoldingsAndPrices() {
+function buildMarketPnlRows() {
   if (!state.dailyHoldings.length || !state.dailyPrices.length) return [];
 
   const flowMap = buildInvestmentFlowsByDate(state.transactions);
@@ -2366,13 +2302,26 @@ function buildCalendarRowsFromHoldingsAndPrices() {
       if (!date || isWeekend(date)) return null;
       const marketValues = { 台股: 0, 美股: 0 };
       const marketOpen = { 台股: false, 美股: false };
+      const marketMissingPrice = { 台股: false, 美股: false };
 
       holdingsByDate.get(key).forEach((holding) => {
         const price = priceMap.get(historicalKey(key, holding.market, holding.ticker));
-        if (!price) return;
-        if (price.exact) marketOpen[holding.market] = true;
+        if (!price || !price.exact || !(price.closeTwd > 0)) {
+          marketMissingPrice[holding.market] = true;
+          return;
+        }
+        marketOpen[holding.market] = true;
         marketValues[holding.market] += Math.floor(holding.qty * price.closeTwd);
       });
+
+      if (marketMissingPrice["台股"]) {
+        marketOpen["台股"] = false;
+        marketValues["台股"] = 0;
+      }
+      if (marketMissingPrice["美股"]) {
+        marketOpen["美股"] = false;
+        marketValues["美股"] = 0;
+      }
 
       const twPnl = marketOpen["台股"] && lastValue["台股"] !== null ? marketValues["台股"] - lastValue["台股"] : 0;
       const usPnl = marketOpen["美股"] && lastValue["美股"] !== null ? marketValues["美股"] - lastValue["美股"] : 0;
