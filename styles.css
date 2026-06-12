@@ -965,6 +965,11 @@ select {
 }
 
 .local-actions .secondary-button:nth-child(6) .action-icon {
+  background: #a78bfa;
+  color: white;
+}
+
+.local-actions .secondary-button:nth-child(7) .action-icon {
   background: #74747e;
   color: white;
 }
