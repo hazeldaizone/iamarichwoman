@@ -68,7 +68,7 @@ function normalizeComputedTransactions(rows, priceByKey, liveFx) {
     const divQ = number(row["配息股數"]);
     const fx = market === "美股" ? number(row["美元匯率"]) || liveFx : 1;
     const priceInfo = priceByKey.get(stockKey(market, ticker)) || {};
-    const currentPrice = number(row["股票現價"]) || priceInfo.price || price;
+    const currentPrice = roundPrice(priceInfo.price || number(row["股票現價"]) || price);
     const usd = market === "美股" ? calcTradeUsdAmount(type, price, qty, fee, other, rebate, divP, divQ) : "";
     const net = calcTradeTwdNet(market, type, price, qty, fee, other, rebate, divP, divQ, fx);
 
@@ -234,8 +234,11 @@ function recalculateTransactions(rows, priceByKey, liveFx) {
   batches.forEach((batch) => {
     const row = batch.row;
     const priceInfo = priceByKey.get(stockKey(batch.market, batch.ticker)) || {};
-    const currentPrice = number(row["股票現價"]) || priceInfo.price || number(row["成交單價"]);
-    const fx = batch.market === "美股" ? liveFx : 1;
+    const rowPrice = number(row["股票現價"]);
+    const currentPrice = roundPrice(batch.remQty > 0
+      ? priceInfo.price || rowPrice || number(row["成交單價"])
+      : rowPrice || priceInfo.price || number(row["成交單價"]));
+    const fx = batch.market === "美股" ? priceInfo.fx || liveFx : 1;
     const remCost = Math.max(0, batch.remCost);
     row["剩餘股數"] = roundQty(batch.remQty);
     row["剩餘成本"] = batch.remQty > 0 ? -remCost : "";
@@ -289,7 +292,7 @@ function buildStockSummary(transactions, previousStocks, liveFx) {
         market,
         ticker,
         name: prev["名稱"] || ticker,
-        price: number(tx["股票現價"]) || number(prev["股票現價"]),
+        price: roundPrice(number(prev["股票現價"]) || number(tx["股票現價"])),
         qty: 0,
         cost: 0,
         todayPnl: number(prev["今日損益"]),
@@ -306,7 +309,7 @@ function buildStockSummary(transactions, previousStocks, liveFx) {
     }
     const group = groups.get(key);
     group.hasLocalActivity = group.hasLocalActivity || isLocalRow(tx);
-    if (number(tx["股票現價"])) group.price = number(tx["股票現價"]);
+    if (number(tx["剩餘股數"]) > 0 && number(tx["股票現價"])) group.price = roundPrice(number(tx["股票現價"]));
     group.qty += number(tx["剩餘股數"]);
     group.cost += Math.abs(number(tx["剩餘成本"]));
     group.totalDiv += number(tx["配息金額"]);
@@ -833,7 +836,7 @@ function parseSellSpec(value) {
 function buildPriceMap(stocks, dailyPrices, liveFx) {
   const map = new Map(stocks.map((stock) => [
     stockKey(stock["市場"], stock["標的"]),
-    { price: number(stock["股票現價"]), fx: text(stock["市場"]) === "美股" ? liveFx : 1 },
+    { price: roundPrice(number(stock["股票現價"])), fx: text(stock["市場"]) === "美股" ? liveFx : 1 },
   ]));
   const latestByInstrument = new Map();
   dailyPrices.forEach((row) => {
@@ -846,7 +849,7 @@ function buildPriceMap(stocks, dailyPrices, liveFx) {
     if (!previous || day > previous.day) {
       latestByInstrument.set(key, {
         day,
-        price: number(row["收盤價"] ?? row.close),
+        price: roundPrice(number(row["收盤價"] ?? row.close)),
         fx: market === "美股" ? number(row["匯率"] ?? row.fx) || liveFx : 1,
       });
     }
@@ -977,4 +980,8 @@ function round0(value) {
 
 function roundQty(value) {
   return Math.round((Number(value) || 0) * 100000) / 100000;
+}
+
+function roundPrice(value) {
+  return Math.round((Number(value) || 0) * 10000) / 10000;
 }
