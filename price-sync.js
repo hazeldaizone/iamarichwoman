@@ -15,7 +15,7 @@ export async function syncPublicMarketPrices(dataset, options = {}) {
   const data = dataset?.data || {};
   const end = startOfDay(options.now || new Date());
   const transactions = data.transactions || [];
-  const instruments = collectInstruments(transactions, end);
+  const instruments = collectInstruments(transactions, data.stocks || [], end);
   if (!instruments.length) {
     return { dataset, changed: false, fetched: 0, errors: [] };
   }
@@ -25,7 +25,7 @@ export async function syncPublicMarketPrices(dataset, options = {}) {
   const syncJobs = instruments
     .map((instrument) => ({
       ...instrument,
-      missing: missingDatesForInstrument(instrument, end, existingByKey),
+      missing: missingDatesForInstrument(instrument, existingByKey),
     }))
     .filter((job) => job.missing.length);
 
@@ -49,13 +49,14 @@ export async function syncPublicMarketPrices(dataset, options = {}) {
     }
 
     const start = addDays(job.missing[0], -10);
+    const fetchEnd = job.endDate || end;
     try {
-      const raw = await fetchYahooHistory(yahooSymbol, start, end);
+      const raw = await fetchYahooHistory(yahooSymbol, start, fetchEnd);
       const rows = materializeDailyPriceRows({
         instrument: job,
         raw,
         start: job.missing[0],
-        end,
+        end: fetchEnd,
         existingByKey,
         fxSeries,
       });
@@ -95,8 +96,16 @@ export async function syncPublicMarketPrices(dataset, options = {}) {
   };
 }
 
-function collectInstruments(transactions, end) {
+function collectInstruments(transactions, stocks, end) {
   const byKey = new Map();
+  const currentQtyByKey = new Map();
+  (stocks || []).forEach((row) => {
+    const market = text(row["市場"] || row.market);
+    const ticker = normalizeTicker(row["標的"] ?? row.ticker);
+    if (!market || !ticker) return;
+    currentQtyByKey.set(`${market}|${ticker}`, number(row["庫存股數"] ?? row.qty));
+  });
+
   transactions.forEach((row) => {
     const market = text(row["市場"]);
     const ticker = normalizeTicker(row["標的"]);
@@ -105,17 +114,27 @@ function collectInstruments(transactions, end) {
     if (!["台股", "美股"].includes(market) || !ticker || !date || date > end) return;
     if (!["買入", "賣出", "配息", "分割", "結轉"].includes(type)) return;
     const key = `${market}|${ticker}`;
-    const previous = byKey.get(key);
-    if (!previous || date < previous.firstDate) {
-      byKey.set(key, { market, ticker, firstDate: startOfDay(date) });
-    }
+    const previous = byKey.get(key) || {
+      market,
+      ticker,
+      firstDate: startOfDay(date),
+      lastDate: startOfDay(date),
+    };
+    if (date < previous.firstDate) previous.firstDate = startOfDay(date);
+    if (date > previous.lastDate) previous.lastDate = startOfDay(date);
+    byKey.set(key, previous);
+  });
+
+  byKey.forEach((instrument, key) => {
+    const currentQty = currentQtyByKey.get(key);
+    instrument.endDate = currentQty !== undefined && !(currentQty > 0) ? instrument.lastDate : end;
   });
   return [...byKey.values()].sort((a, b) => `${a.market}${a.ticker}`.localeCompare(`${b.market}${b.ticker}`));
 }
 
-function missingDatesForInstrument(instrument, end, existingByKey) {
+function missingDatesForInstrument(instrument, existingByKey) {
   const missing = [];
-  for (const day of dateRange(instrument.firstDate, end)) {
+  for (const day of dateRange(instrument.firstDate, instrument.endDate)) {
     if (!existingByKey.has(composePriceKey(dateKey(day), instrument.market, instrument.ticker))) {
       missing.push(day);
     }
@@ -170,8 +189,16 @@ async function fetchFxSeries(start, end, fallbackFx) {
 }
 
 async function fetchYahooHistory(symbol, start, end) {
-  const proxyRows = await fetchPriceProxyHistory(symbol, start, end);
-  if (proxyRows.length) return proxyRows;
+  const proxyUrl = configuredPriceProxyUrl();
+  if (proxyUrl) {
+    const proxyRows = await fetchPriceProxyHistory(proxyUrl, symbol, start, end);
+    if (proxyRows.length) return proxyRows;
+    throw new Error("公開股價 Proxy 無資料");
+  }
+
+  if (!allowDirectPriceFetch()) {
+    throw new Error("尚未設定公開股價 Proxy，手機 PWA 不會直接抓 Yahoo 以避免 CORS 失敗");
+  }
 
   const period1 = Math.floor(start.getTime() / 1000);
   const period2 = Math.floor(addDays(end, 2).getTime() / 1000);
@@ -187,9 +214,7 @@ async function fetchYahooHistory(symbol, start, end) {
     .map((row) => ({ date: startOfDay(row.date), close: row.close }));
 }
 
-async function fetchPriceProxyHistory(symbol, start, end) {
-  const proxyUrl = text(globalThis.ASSET_PWA_CONFIG?.priceProxyUrl);
-  if (!proxyUrl) return [];
+async function fetchPriceProxyHistory(proxyUrl, symbol, start, end) {
   const url = new URL(proxyUrl);
   url.searchParams.set("action", "history");
   url.searchParams.set("symbol", symbol);
@@ -209,6 +234,22 @@ async function fetchPriceProxyHistory(symbol, start, end) {
     .map((row) => ({ date: parseDate(row.date || row["日期"]), close: number(row.close || row["收盤價"]) }))
     .filter((row) => row.date && row.close > 0)
     .map((row) => ({ date: startOfDay(row.date), close: row.close }));
+}
+
+function configuredPriceProxyUrl() {
+  return text(safeLocalStorageGet("assetPriceProxyUrl") || globalThis.ASSET_PWA_CONFIG?.priceProxyUrl);
+}
+
+function allowDirectPriceFetch() {
+  return globalThis.ASSET_PWA_CONFIG?.allowDirectPriceFetch === true;
+}
+
+function safeLocalStorageGet(key) {
+  try {
+    return globalThis.localStorage?.getItem(key) || "";
+  } catch {
+    return "";
+  }
 }
 
 function fetchJsonp(url) {
